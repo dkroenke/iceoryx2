@@ -14,13 +14,23 @@ multi-ecosystem-groups:
 updates:
   - package-ecosystem: "cargo"
     directory: "/"
+    patterns: ["*"]
     multi-ecosystem-group: "infrastructure"
   - package-ecosystem: "bazel"
-    directories: ["examples/bazel", "/"]
+    directories:
+      - "/"
+      - "/examples/bazel/*"
+    patterns: ["*"]
     multi-ecosystem-group: "infrastructure"
   - package-ecosystem: "pip"
-    directories: ["iceoryx2-ffi/python", "doc/api/python"]
+    directories: 
+      - "/iceoryx2-ffi/python"
+      - "/doc/api/python"
+    patterns: ["*"]
     multi-ecosystem-group: "infrastructure"
   - package-ecosystem: "github-actions"
-    directory: "/"
+    directories:
+      - "/"
+      - "/.github/actions/*"
+    patterns: ["*"]
     multi-ecosystem-group: "infrastructure"
