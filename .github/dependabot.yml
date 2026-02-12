@@ -19,7 +19,7 @@ updates:
   - package-ecosystem: "bazel"
     directories:
       - "/"
-      - "/examples/bazel/*"
+      - "/examples/bazel"
     patterns: ["*"]
     multi-ecosystem-group: "infrastructure"
   - package-ecosystem: "pip"
@@ -31,6 +31,6 @@ updates:
   - package-ecosystem: "github-actions"
     directories:
       - "/"
-      - "/.github/actions/*"
+      - "/.github/actions"
     patterns: ["*"]
     multi-ecosystem-group: "infrastructure"
