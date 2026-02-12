@@ -17,9 +17,7 @@ updates:
     patterns: ["*"]
     multi-ecosystem-group: "infrastructure"
   - package-ecosystem: "bazel"
-    directories:
-      - "/"
-      - "/examples/bazel"
+    directory: "/"
     patterns: ["*"]
     multi-ecosystem-group: "infrastructure"
   - package-ecosystem: "pip"
