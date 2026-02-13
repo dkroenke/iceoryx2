@@ -1,5 +1,7 @@
 version: 2
 
+# Some comment
+
 multi-ecosystem-groups:
   infrastructure:
     schedule:
