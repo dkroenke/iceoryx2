@@ -12,7 +12,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # version v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # version v6.0.2
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # version: v1
@@ -21,7 +21,7 @@ jobs:
           targets: armv7r-none-eabihf
 
       - name: Setup sccache
-        uses: mozilla-actions/sccache-action@bafd42bd91680affe190f697cac6ef3ad958ecba # version: v0.0.9
+        uses: mozilla-actions/sccache-action@c41c02b356d3eb635e3ca68138e18e56858dfeca # version: v0.0.9
 
       - name: Set caching env vars on non-Windows
         run: |

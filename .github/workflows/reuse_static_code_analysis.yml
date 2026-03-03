@@ -16,11 +16,11 @@ jobs:
     runs-on: ${{ inputs.os }}
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # version v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # version v6.0.2
 
       - name: Get changed files
         id: changed-files
-        uses: tj-actions/changed-files@e0021407031f5be11a464abee9a0776171c79891 # version: v47.0.1
+        uses: tj-actions/changed-files@22103cc46bda19c2b464ffe86db46df6922fd323 # version: v47.0.5
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # version: v1
@@ -29,7 +29,7 @@ jobs:
           components: clippy
 
       - name: Setup sccache
-        uses: mozilla-actions/sccache-action@bafd42bd91680affe190f697cac6ef3ad958ecba # version: v0.0.9
+        uses: mozilla-actions/sccache-action@c41c02b356d3eb635e3ca68138e18e56858dfeca # version: v0.0.9
 
       - name: Set caching env vars on non-Windows
         run: |
