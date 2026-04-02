@@ -1,34 +1,51 @@
 version: 2
 
-multi-ecosystem-groups:
-  infrastructure:
-    schedule:
-      interval: "daily"
-    labels: ["infrastructure", "dependencies"]
-    commit-message:
-      prefix: "[#1234] "
-    pull-request-branch-name:
-      prefix: "iox2-1234-"
-      separator: "-"
-
 updates:
   - package-ecosystem: "cargo"
     directory: "/"
     patterns: ["*"]
-    multi-ecosystem-group: "infrastructure"
+    commit-message:
+      prefix: "[#16] "
+    pull-request-branch-name:
+      separator: "-"
+    schedule:
+      interval: "daily"
+    # Only security updates for Cargo
+    open-pull-requests-limit: 0
   - package-ecosystem: "bazel"
     directory: "/"
     patterns: ["*"]
-    multi-ecosystem-group: "infrastructure"
+    commit-message:
+      prefix: "[#16] "
+    pull-request-branch-name:
+      separator: "-"
+    schedule:
+      interval: "daily"
+    # Only security updates for Bazel
+    open-pull-requests-limit: 0
   - package-ecosystem: "pip"
     directories: 
       - "/iceoryx2-ffi/python"
       - "/doc/api/python"
     patterns: ["*"]
-    multi-ecosystem-group: "infrastructure"
+    commit-message:
+      prefix: "[#16] "
+    pull-request-branch-name:
+      separator: "-"
+    schedule:
+      interval: "daily"
+    # Only security updates for Pip
+    open-pull-requests-limit: 0
   - package-ecosystem: "github-actions"
     directories:
       - "/"
       - "/.github/actions"
     patterns: ["*"]
-    multi-ecosystem-group: "infrastructure"
+    commit-message:
+      prefix: "[#16] "
+    pull-request-branch-name:
+      separator: "-"
+    schedule:
+      interval: "daily"
+    # Only security updates for GitHub Actions
+    open-pull-requests-limit: 0
