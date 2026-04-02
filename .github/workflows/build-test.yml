@@ -19,7 +19,7 @@ jobs:
       markdown: ${{ steps.filter.outputs.markdown }}
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # version v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # version v6.0.2
 
       - name: Check for changed file types
         uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # version: v3.0.2
@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # version v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # version v6.0.2
 
       - name: Check format of all commit messages
         run: ./internal/scripts/ci_test_commit_msg.sh
@@ -71,10 +71,10 @@ jobs:
     runs-on: ubuntu-slim
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # version v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # version v6.0.2
 
       - name: Setup node.js
-        uses: actions/setup-node@395ad3262231945c25e8478fd5baf05154b1d79f # version: v6.1.0
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238 # version: v6.2.0
         with:
           node-version: "24"
 
@@ -94,7 +94,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # version v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # version v6.0.2
 
       - name: clang-tidy version
         run: clang-tidy --version
@@ -137,7 +137,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # version v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # version v6.0.2
 
       - name: Run code examples in documentation
         run: cargo test --workspace --doc ${{ matrix.cargo-features-flag }}
@@ -152,7 +152,7 @@ jobs:
         os: [windows-latest, ubuntu-slim, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # version v6.0.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # version v6.0.2
       - name: Build and cache cargo-nextest
         uses: ./.github/actions/build-and-cache-rust-tool
         with:
@@ -172,7 +172,7 @@ jobs:
         os: [ubuntu-latest, macos-latest,windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # version v6.0.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # version v6.0.2
 
       - name: Prepare Windows
         if: ${{ runner.os == 'Windows' }}
@@ -185,7 +185,7 @@ jobs:
           uname -a
 
       - name: Set Up Python & Install Poetry
-        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # version: v6.0.1
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # version: v6.0.1
         with:
           python-version: "3.13"
       - run: pip install poetry==2.2.1
@@ -218,10 +218,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # version v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # version v6.0.2
 
       - name: Setup cmake
-        uses: jwlawson/actions-setup-cmake@802fa1a2c4e212495c05bf94dba2704a92a472be # version: v2.0.2
+        uses: jwlawson/actions-setup-cmake@3a6cbe35ba64df7ca70c51365c4aff65db9a9037 # version: v2.1.1
         with:
           cmake-version: "3.31.x"
       - name: Use cmake
@@ -234,7 +234,7 @@ jobs:
           targets: i686-unknown-linux-gnu, armv7r-none-eabihf
 
       - name: Setup sccache
-        uses: mozilla-actions/sccache-action@bafd42bd91680affe190f697cac6ef3ad958ecba # version: v0.0.9
+        uses: mozilla-actions/sccache-action@c41c02b356d3eb635e3ca68138e18e56858dfeca # version: v0.0.9
 
       - name: Set caching env vars on non-Windows
         run: |
@@ -242,7 +242,7 @@ jobs:
           echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
 
       - name: Set Up Python & Install Poetry
-        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # version: v6.0.1
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # version: v6.0.1
         with:
           python-version: "3.13"
       - run: pip install poetry==2.2.1
@@ -267,7 +267,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # version v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # version v6.0.2
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # version: v1
@@ -275,7 +275,7 @@ jobs:
           toolchain: stable
 
       - name: Setup sccache
-        uses: mozilla-actions/sccache-action@bafd42bd91680affe190f697cac6ef3ad958ecba # version: v0.0.9
+        uses: mozilla-actions/sccache-action@c41c02b356d3eb635e3ca68138e18e56858dfeca # version: v0.0.9
 
       - name: Set caching env vars on non-Windows
         run: |
@@ -378,7 +378,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # version v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # version v6.0.2
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # version: v1
@@ -391,7 +391,7 @@ jobs:
           uname -a
 
       - name: Set up Bazel
-        uses: bazel-contrib/setup-bazel@43d7d5ceab59a307da44fc7585faa2a2fff4f88d # version: 0.16.0
+        uses: bazel-contrib/setup-bazel@083175551ceeceebc757ebee2127fde78840ca77 # version: 0.18.0
 
       - name: Run bazel build
         env:
@@ -420,7 +420,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout sources
-        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # version v6.0.1
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # version v6.0.2
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # version: v1
@@ -438,7 +438,7 @@ jobs:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # ratchet:actions/checkout@v4
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # ratchet:actions/checkout@v4
       - name: Build and cache grcov
         uses: ./.github/actions/build-and-cache-rust-tool
         with:

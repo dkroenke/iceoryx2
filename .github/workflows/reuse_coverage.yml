@@ -8,7 +8,7 @@ jobs:
     timeout-minutes: 60
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # version v6.0.1
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # version v6.0.2
 
       - name: Install dependencies
         uses: ./.github/actions/install-iceoryx-deps-and-clang
@@ -27,7 +27,7 @@ jobs:
           components: llvm-tools
 
       - name: Setup sccache
-        uses: mozilla-actions/sccache-action@bafd42bd91680affe190f697cac6ef3ad958ecba # version: v0.0.9
+        uses: mozilla-actions/sccache-action@c41c02b356d3eb635e3ca68138e18e56858dfeca # version: v0.0.9
 
       - name: Set caching env vars on non-Windows
         run: |
@@ -35,7 +35,7 @@ jobs:
           echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
 
       - name: Setup gcovr
-        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # version: v6.0.1
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # version: v6.0.1
         with:
           python-version: "3.13"
           cache: "pip" # caching pip dependencies
@@ -59,7 +59,7 @@ jobs:
         run: ./internal/scripts/generate-cov-report.sh --html
 
       - name: Archive coverage-html artifacts
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # version: v6.0.0
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # version: v7.0.0
         with:
           name: coverage-html
           path: target/ff/coverage/html/*
