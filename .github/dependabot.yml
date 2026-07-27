@@ -4,26 +4,25 @@ updates:
   - package-ecosystem: "cargo"
     directories: 
       - "/"
-      - "/integrations"
+      - "/integrations/ros2"
+      - "/integrations/zenoh"
     patterns: ["*"]
     commit-message:
-      prefix: "[#16] "
+      prefix: "[#16]"
     pull-request-branch-name:
       separator: "-"
     schedule:
       interval: "daily"
-    # Only security updates for Cargo
     open-pull-requests-limit: 0
   - package-ecosystem: "bazel"
     directory: "/"
     patterns: ["*"]
     commit-message:
-      prefix: "[#16] "
+      prefix: "[#16]"
     pull-request-branch-name:
       separator: "-"
     schedule:
       interval: "daily"
-    # Only security updates for Bazel
     open-pull-requests-limit: 0
   - package-ecosystem: "pip"
     directories: 
@@ -31,12 +30,11 @@ updates:
       - "/doc/api/python"
     patterns: ["*"]
     commit-message:
-      prefix: "[#16] "
+      prefix: "[#16]"
     pull-request-branch-name:
       separator: "-"
     schedule:
       interval: "daily"
-    # Only security updates for Pip
     open-pull-requests-limit: 0
   - package-ecosystem: "github-actions"
     directories:
@@ -44,10 +42,9 @@ updates:
       - "/.github/actions"
     patterns: ["*"]
     commit-message:
-      prefix: "[#16] "
+      prefix: "[#16]"
     pull-request-branch-name:
       separator: "-"
     schedule:
       interval: "daily"
-    # Only security updates for GitHub Actions
     open-pull-requests-limit: 0
