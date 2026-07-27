@@ -1,5 +1,4 @@
 version: 2
-
 updates:
   - package-ecosystem: "cargo"
     directories: 
@@ -9,8 +8,7 @@ updates:
     patterns: ["*"]
     commit-message:
       prefix: "[#16]"
-    pull-request-branch-name:
-      separator: "-"
+      include: "scope"
     schedule:
       interval: "daily"
     open-pull-requests-limit: 0
@@ -19,8 +17,7 @@ updates:
     patterns: ["*"]
     commit-message:
       prefix: "[#16]"
-    pull-request-branch-name:
-      separator: "-"
+      include: "scope"
     schedule:
       interval: "daily"
     open-pull-requests-limit: 0
@@ -31,8 +28,7 @@ updates:
     patterns: ["*"]
     commit-message:
       prefix: "[#16]"
-    pull-request-branch-name:
-      separator: "-"
+      include: "scope"
     schedule:
       interval: "daily"
     open-pull-requests-limit: 0
@@ -43,8 +39,7 @@ updates:
     patterns: ["*"]
     commit-message:
       prefix: "[#16]"
-    pull-request-branch-name:
-      separator: "-"
+      include: "scope"
     schedule:
       interval: "daily"
     open-pull-requests-limit: 0
