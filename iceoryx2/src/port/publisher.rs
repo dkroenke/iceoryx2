@@ -113,14 +113,15 @@ use iceoryx2_bb_concurrency::atomic::{AtomicBool, AtomicUsize};
 use iceoryx2_bb_concurrency::cell::UnsafeCell;
 use iceoryx2_bb_container::queue::Queue;
 use iceoryx2_bb_elementary::CallbackProgression;
+use iceoryx2_bb_elementary::allocation_strategy::AllocationStrategy;
 use iceoryx2_bb_elementary::cyclic_tagger::CyclicTagger;
-use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
+use iceoryx2_bb_elementary_traits::iceoryx_send::IceoryxSend;
 use iceoryx2_bb_elementary_traits::testing::abandonable::Abandonable;
 use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
 use iceoryx2_bb_lock_free::mpmc::container::{ContainerHandle, ContainerState};
 use iceoryx2_cal::arc_sync_policy::ArcSyncPolicy;
 use iceoryx2_cal::dynamic_storage::DynamicStorage;
-use iceoryx2_cal::shm_allocator::{AllocationStrategy, PointerOffset};
+use iceoryx2_cal::shm_allocator::PointerOffset;
 use iceoryx2_cal::zero_copy_connection::{
     CHANNEL_STATE_OPEN, ChannelId, ZeroCopyCreationError, ZeroCopyPortDetails, ZeroCopySender,
 };
@@ -129,8 +130,7 @@ use iceoryx2_log::{fail, warn};
 use crate::port::details::sender::*;
 use crate::port::port_name::PortName;
 use crate::port::update_connections::{ConnectionFailure, UpdateConnections};
-use crate::prelude::BackpressureStrategy;
-use crate::raw_sample::RawSampleMut;
+use crate::prelude::{BackpressureStrategy, Flatbuffer};
 use crate::sample_mut::SampleMut;
 use crate::sample_mut_uninit::SampleMutUninit;
 use crate::service::dynamic_config::publish_subscribe::{PublisherDetails, SubscriberDetails};
@@ -200,12 +200,10 @@ impl<Service: service::Service> Abandonable for PublisherSharedState<Service> {
         let this = unsafe { this.as_mut() };
         unsafe {
             Sender::<Service, PublishSubscribeResources<Service>>::abandon_in_place(
-                NonNull::iox2_from_mut(&mut this.sender),
+                NonNull::from_mut(&mut this.sender),
             )
         }
-        unsafe {
-            Service::StaticStorage::abandon_in_place(NonNull::iox2_from_mut(&mut this.port_tag))
-        }
+        unsafe { Service::StaticStorage::abandon_in_place(NonNull::from_mut(&mut this.port_tag)) }
     }
 }
 
@@ -335,7 +333,7 @@ impl<Service: service::Service> PublisherSharedState<Service> {
 #[derive(Debug)]
 pub struct Publisher<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized + 'static,
+    Payload: IceoryxSend + Debug + ?Sized + 'static,
     UserHeader: Debug + ZeroCopySend,
 > {
     pub(crate) publisher_shared_state:
@@ -348,7 +346,7 @@ pub struct Publisher<
 
 unsafe impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > Send for Publisher<Service, Payload, UserHeader>
 where
@@ -358,7 +356,7 @@ where
 
 unsafe impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > Sync for Publisher<Service, Payload, UserHeader>
 where
@@ -368,14 +366,14 @@ where
 
 impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > Abandonable for Publisher<Service, Payload, UserHeader>
 {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
         unsafe {
-            Service::ArcThreadSafetyPolicy::abandon_in_place(NonNull::iox2_from_mut(
+            Service::ArcThreadSafetyPolicy::abandon_in_place(NonNull::from_mut(
                 &mut this.publisher_shared_state,
             ))
         };
@@ -384,7 +382,7 @@ impl<
 
 impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > Drop for Publisher<Service, Payload, UserHeader>
 {
@@ -403,7 +401,7 @@ impl<
 
 impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > Publisher<Service, Payload, UserHeader>
 {
@@ -603,7 +601,7 @@ impl<
 ////////////////////////
 impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + Sized,
+    Payload: IceoryxSend + ZeroCopySend + Debug + Sized,
     UserHeader: Default + Debug + ZeroCopySend,
 > Publisher<Service, Payload, UserHeader>
 {
@@ -677,26 +675,14 @@ impl<
         unsafe { header_ptr.write(Header::new(*node_id, self.id(), 1)) };
         unsafe { user_header_ptr.write(UserHeader::default()) };
 
-        let sample = unsafe {
-            RawSampleMut::new_unchecked(header_ptr, user_header_ptr, chunk.payload.cast())
-        };
         Ok(
             SampleMutUninit::<Service, MaybeUninit<Payload>, UserHeader>::new(
                 &self.publisher_shared_state,
-                sample,
-                chunk.offset,
-                chunk.size,
+                chunk,
             ),
         )
     }
-}
 
-impl<
-    Service: service::Service,
-    Payload: Default + Debug + ZeroCopySend + Sized,
-    UserHeader: Default + Debug + ZeroCopySend,
-> Publisher<Service, Payload, UserHeader>
-{
     /// Loans/allocates a [`crate::sample_mut::SampleMut`] from the underlying data segment of the [`Publisher`]
     /// and initialize it with the default value. This can be a performance hit and [`Publisher::loan_uninit`]
     /// can be used to loan a [`core::mem::MaybeUninit<Payload>`].
@@ -724,13 +710,41 @@ impl<
     /// # Ok(())
     /// # }
     /// ```
-    pub fn loan(&self) -> Result<SampleMut<Service, Payload, UserHeader>, LoanError> {
+    pub fn loan(&self) -> Result<SampleMut<Service, Payload, UserHeader>, LoanError>
+    where
+        Payload: Default,
+    {
         Ok(self.loan_uninit()?.write_payload(Payload::default()))
     }
 }
 ////////////////////////
 // END: typed API
 ////////////////////////
+
+impl<Service: service::Service, Payload: Debug, UserHeader: Default + Debug + ZeroCopySend>
+    Publisher<Service, Flatbuffer<Payload>, UserHeader>
+{
+    /// Acquires a [`SampleMutUninit`] with an integrated flatbuffer builder.
+    pub fn loan_flatbuffer(
+        &self,
+    ) -> Result<SampleMutUninit<Service, Flatbuffer<Payload>, UserHeader>, LoanError> {
+        let shared_state = self.publisher_shared_state.lock();
+        let initial_layout = shared_state.sender.sample_layout(1);
+        let chunk = shared_state.sender.allocate(initial_layout)?;
+        let node_id = shared_state.sender.service_state.shared_node().id();
+        let header_ptr = chunk.header as *mut Header;
+        let user_header_ptr: *mut UserHeader = chunk.user_header.cast();
+        unsafe { header_ptr.write(Header::new(*node_id, self.id(), 1)) };
+        unsafe { user_header_ptr.write(UserHeader::default()) };
+
+        Ok(
+            SampleMutUninit::<Service, Flatbuffer<Payload>, UserHeader>::new_flatbuffer(
+                &self.publisher_shared_state,
+                chunk,
+            ),
+        )
+    }
+}
 
 ////////////////////////
 // BEGIN: sliced API
@@ -828,54 +842,42 @@ impl<
     /// ```
     pub fn loan_slice_uninit(
         &self,
-        slice_len: usize,
+        number_of_elements: usize,
     ) -> Result<SampleMutUninit<Service, [MaybeUninit<Payload>], UserHeader>, LoanError> {
         // required since Rust does not support generic specializations or negative traits
         debug_assert!(TypeId::of::<Payload>() != TypeId::of::<CustomPayloadMarker>());
 
-        self.loan_slice_uninit_impl(slice_len, slice_len)
+        self.loan_slice_uninit_impl(number_of_elements, number_of_elements)
     }
 
     fn loan_slice_uninit_impl(
         &self,
-        slice_len: usize,
-        underlying_number_of_slice_elements: usize,
+        number_of_elements: usize,
+        underlying_slice_len: usize,
     ) -> Result<SampleMutUninit<Service, [MaybeUninit<Payload>], UserHeader>, LoanError> {
         let shared_state = self.publisher_shared_state.lock();
         let max_slice_len = shared_state.config.initial_max_slice_len;
         if shared_state.config.allocation_strategy == AllocationStrategy::Static
-            && max_slice_len < slice_len
+            && max_slice_len < number_of_elements
         {
             fail!(from self, with LoanError::ExceedsMaxLoanSize,
                 "Unable to loan slice with {} elements since it would exceed the max supported slice length of {}.",
-                slice_len, max_slice_len);
+                number_of_elements, max_slice_len);
         }
 
-        let sample_layout = shared_state.sender.sample_layout(slice_len);
+        let sample_layout = shared_state.sender.sample_layout(number_of_elements);
         let chunk = shared_state.sender.allocate(sample_layout)?;
         let user_header_ptr: *mut UserHeader = chunk.user_header.cast();
         let header_ptr = chunk.header as *mut Header;
         let node_id = shared_state.sender.service_state.shared_node().id();
-        unsafe { header_ptr.write(Header::new(*node_id, self.id(), slice_len as _)) };
+        unsafe { header_ptr.write(Header::new(*node_id, self.id(), number_of_elements as _)) };
         unsafe { user_header_ptr.write(UserHeader::default()) };
-
-        let sample = unsafe {
-            RawSampleMut::new_unchecked(
-                header_ptr,
-                user_header_ptr,
-                core::ptr::slice_from_raw_parts_mut(
-                    chunk.payload.cast(),
-                    underlying_number_of_slice_elements,
-                ),
-            )
-        };
 
         Ok(
             SampleMutUninit::<Service, [MaybeUninit<Payload>], UserHeader>::new(
                 &self.publisher_shared_state,
-                sample,
-                chunk.offset,
-                chunk.size,
+                chunk,
+                underlying_slice_len,
             ),
         )
     }
@@ -913,7 +915,7 @@ impl<Service: service::Service> Publisher<Service, [CustomPayloadMarker], Custom
 
 impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > UpdateConnections for Publisher<Service, Payload, UserHeader>
 {

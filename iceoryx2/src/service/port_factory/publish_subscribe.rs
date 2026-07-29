@@ -41,6 +41,8 @@
 //! ```
 extern crate alloc;
 use alloc::sync::Arc;
+use iceoryx2_bb_elementary_traits::iceoryx_send::IceoryxSend;
+use iceoryx2_cal::static_storage::StaticStorage;
 
 use super::nodes;
 use super::{publisher::PortFactoryPublisher, subscriber::PortFactorySubscriber};
@@ -55,7 +57,6 @@ use crate::service::{self, ServiceState, SharedServiceState, dynamic_config, sta
 use core::ptr::NonNull;
 use core::{fmt::Debug, marker::PhantomData};
 use iceoryx2_bb_elementary::CallbackProgression;
-use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
 use iceoryx2_bb_elementary_traits::testing::abandonable::Abandonable;
 use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
 use iceoryx2_cal::dynamic_storage::DynamicStorage;
@@ -68,7 +69,7 @@ use iceoryx2_cal::dynamic_storage::DynamicStorage;
 #[derive(Debug)]
 pub struct PortFactory<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > {
     pub(crate) service: SharedServiceState<Service, PublishSubscribeResources<Service>>,
@@ -78,14 +79,14 @@ pub struct PortFactory<
 
 unsafe impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > Send for PortFactory<Service, Payload, UserHeader>
 {
 }
 unsafe impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > Sync for PortFactory<Service, Payload, UserHeader>
 {
@@ -93,19 +94,19 @@ unsafe impl<
 
 impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > Abandonable for PortFactory<Service, Payload, UserHeader>
 {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
-        unsafe { SharedServiceState::abandon_in_place(NonNull::iox2_from_mut(&mut this.service)) };
+        unsafe { SharedServiceState::abandon_in_place(NonNull::from_mut(&mut this.service)) };
     }
 }
 
 impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > crate::service::port_factory::PortFactory for PortFactory<Service, Payload, UserHeader>
 {
@@ -151,7 +152,7 @@ impl<
 
 impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > PortFactory<Service, Payload, UserHeader>
 {
@@ -218,8 +219,11 @@ impl<
 impl<Service: service::Service, Payload, UserHeader: Debug + ZeroCopySend>
     PortFactory<Service, Flatbuffer<Payload>, UserHeader>
 {
-    /// Returns the [`StaticStorage`](iceoryx2_cal::static_storage::StaticStorage) that contains the type definition.
-    pub fn type_definition(&self) -> Option<&Service::StaticStorage> {
-        self.service.additional_resource().type_definition()
+    /// Returns the [`StaticStorageView`](iceoryx2_cal::static_storage::StaticStorageView) that contains the type definition.
+    pub fn type_definition(&self) -> Option<&<Service::StaticStorage as StaticStorage>::View> {
+        self.service
+            .additional_resource()
+            .type_definition()
+            .map(|v| v.view())
     }
 }

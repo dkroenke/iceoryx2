@@ -15,11 +15,14 @@ use std::sync::Arc;
 
 use iceoryx2::service::{Service, local_threadsafe};
 use iceoryx2_log::fail;
-use iceoryx2_services_tunnel_backend::traits::{Backend, BackendBuilder, ReactiveBackendBuilder};
+use iceoryx2_services_tunnel_backend::traits::{
+    Backend, BackendBuilder, Mapping, Passthrough, ReactiveBackendBuilder, Translator,
+};
 use iceoryx2_services_tunnel_backend::types::wake::WakeHandle;
 
 use crate::NODE_NAME;
 use crate::config::Config;
+use crate::mapping::{PrefixMapping, TopicDescription};
 use crate::{
     discovery::Discovery,
     rcl::{RclNode, RclNodeBuilder},
@@ -42,33 +45,42 @@ impl core::fmt::Display for CreationError {
 impl core::error::Error for CreationError {}
 
 #[derive(Debug)]
-pub struct Ros2Backend<S: Service> {
+pub struct Ros2Backend<
+    S: Service,
+    M: Mapping<EndpointDescription = TopicDescription> = PrefixMapping,
+    T: Translator = Passthrough,
+> {
     node: Rc<RclNode>,
     /// Typesupport for all configured topics, loaded on initialization.
     type_registry: TypeSupportRegistry,
-    discovery: Discovery<S>,
-    /// `Some` when constructed in reactive mode. Cloned into each relay so
-    /// that incoming ROS 2 data signals the wake.
+    discovery: Discovery<S, M>,
+    mapping: Rc<M>,
+    #[allow(dead_code)]
+    translator: T,
     wake: Option<Arc<WakeHandle<local_threadsafe::Service>>>,
     _phantom: core::marker::PhantomData<S>,
 }
 
-impl<S: Service> Backend<S> for Ros2Backend<S> {
+impl<S: Service, M: Mapping<EndpointDescription = TopicDescription>, T: Translator> Backend<S>
+    for Ros2Backend<S, M, T>
+{
     type Config = Config;
+    type Translator = T;
+    type Mapping = M;
     type CreationError = CreationError;
 
     type Builder<'a>
-        = Builder<'a, S>
+        = Builder<'a, S, M, T>
     where
         Self::Config: 'a;
 
-    type Discovery = Discovery<S>;
+    type Discovery = Discovery<S, M>;
 
     type PublishSubscribeRelay = publish_subscribe::Relay<S>;
     type EventRelay = event::Relay<S>;
 
     type RelayFactory<'b>
-        = Factory<'b, S>
+        = Factory<'b, S, M>
     where
         Self: 'b;
 
@@ -80,6 +92,7 @@ impl<S: Service> Backend<S> for Ros2Backend<S> {
         Factory::new(
             Rc::clone(&self.node),
             &self.type_registry,
+            &self.mapping,
             self.wake.clone(),
         )
     }
@@ -87,29 +100,56 @@ impl<S: Service> Backend<S> for Ros2Backend<S> {
     fn discovery(&self) -> &impl iceoryx2_services_tunnel_backend::traits::Discovery {
         &self.discovery
     }
+
+    fn mapping(&self) -> &Self::Mapping {
+        &self.mapping
+    }
 }
 
 /// Builder for [`Ros2Backend`].
 #[derive(Debug)]
-pub struct Builder<'a, S: Service> {
+pub struct Builder<
+    'a,
+    S: Service,
+    M: Mapping<EndpointDescription = TopicDescription> = PrefixMapping,
+    T: Translator = Passthrough,
+> {
     config: &'a Config,
+    mapping: M,
+    translator: T,
     wake: Option<WakeHandle<local_threadsafe::Service>>,
     _phantom: core::marker::PhantomData<S>,
 }
 
-impl<'a, S: Service> Builder<'a, S> {
+impl<'a, S: Service, M: Mapping<EndpointDescription = TopicDescription>, T: Translator>
+    Builder<'a, S, M, T>
+{
     pub fn new(config: &'a Config) -> Self {
         Self {
             config,
+            mapping: M::default(),
+            translator: T::default(),
             wake: None,
             _phantom: core::marker::PhantomData,
         }
     }
 }
 
-impl<S: Service> BackendBuilder<S> for Builder<'_, S> {
-    type Backend = Ros2Backend<S>;
+impl<S: Service, M: Mapping<EndpointDescription = TopicDescription>, T: Translator>
+    BackendBuilder<S> for Builder<'_, S, M, T>
+{
+    type Backend = Ros2Backend<S, M, T>;
     type CreationError = CreationError;
+
+    fn translator(mut self, translator: T) -> Self {
+        self.translator = translator;
+        self
+    }
+
+    fn mapping(mut self, mapping: M) -> Self {
+        self.mapping = mapping;
+        self
+    }
 
     fn create(self) -> Result<Self::Backend, Self::CreationError> {
         let origin = "Ros2Backend::create";
@@ -132,19 +172,24 @@ impl<S: Service> BackendBuilder<S> for Builder<'_, S> {
             );
         }
 
-        let discovery = Discovery::new(Rc::clone(&node), &self.config.topics);
+        let mapping = Rc::new(self.mapping);
+        let discovery = Discovery::new(Rc::clone(&node), &self.config.topics, Rc::clone(&mapping));
 
         Ok(Ros2Backend {
             node,
             type_registry,
             discovery,
+            mapping,
+            translator: self.translator,
             wake: self.wake.map(Arc::new),
             _phantom: core::marker::PhantomData,
         })
     }
 }
 
-impl<S: Service> ReactiveBackendBuilder<S> for Builder<'_, S> {
+impl<S: Service, M: Mapping<EndpointDescription = TopicDescription>, T: Translator>
+    ReactiveBackendBuilder<S> for Builder<'_, S, M, T>
+{
     type WakeService = local_threadsafe::Service;
 
     fn reactive(mut self, wake: WakeHandle<local_threadsafe::Service>) -> Self {

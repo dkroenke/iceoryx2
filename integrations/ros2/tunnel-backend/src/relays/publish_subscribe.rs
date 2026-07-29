@@ -13,27 +13,29 @@
 use std::rc::Rc;
 use std::sync::Arc;
 
-use iceoryx2::service::{Service, local_threadsafe, static_config::StaticConfig};
+use iceoryx2::service::{Service, local_threadsafe};
 use iceoryx2_log::fail;
-use iceoryx2_services_tunnel_backend::traits::{PublishSubscribeRelay, RelayBuilder};
+use iceoryx2_services_tunnel_backend::traits::{Mapping, PublishSubscribeRelay, RelayBuilder};
 use iceoryx2_services_tunnel_backend::types::publish_subscribe::{
     LoanFn, Sample, SampleMut, SampleMutUninit,
 };
+use iceoryx2_services_tunnel_backend::types::service_description::{
+    PatternDescription, ServiceDescription, TypeDescription,
+};
 use iceoryx2_services_tunnel_backend::types::wake::WakeHandle;
 
+use crate::mapping::TopicDescription;
+use crate::payload;
 use crate::rcl::{
     RclNode, RclPublisher, RclPublisherBuilder, RclSubscription, RclSubscriptionBuilder, TopicName,
     subscription::TakeError,
 };
 use crate::ros_header::RosHeader;
 use crate::typesupport::TypeSupportRegistry;
-use crate::{mapping, payload};
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum CreationError {
-    InvalidServiceName,
-    InvalidTypeName,
-    InvalidTopic,
+    Mapping,
     TypeSupport,
     Publisher,
     Subscription,
@@ -93,6 +95,10 @@ impl<S: Service> PublishSubscribeRelay<S> for Relay<S> {
     fn send(&self, sample: Sample<S>) -> Result<(), Self::SendError> {
         let origin = "publish_subscribe::Relay::send";
 
+        // TRANSLATION GOES HERE
+        // Instead of publishing the payload bytes directly:
+        //  1. Translate into intermediate buffer
+        //  2. Publish intermediate buffer
         fail!(from origin,
             when self.publisher.publish(payload::as_bytes(sample.payload())),
             with SendError::Publish,
@@ -107,6 +113,11 @@ impl<S: Service> PublishSubscribeRelay<S> for Relay<S> {
         loan: &mut LoanFn<'_, S, LoanError>,
     ) -> Result<Option<SampleMut<S>>, Self::ReceiveError> {
         let mut loaned: Option<SampleMutUninit<S>> = None;
+
+        // TRANSLATION GOES HERE
+        // Instead of taking directly into an iceoryx2 buffer:
+        //  1. Take into an intermediate buffer
+        //  2. Translate from intermediate buffer into iceoryx2 buffer
         let result = self.subscription.take_into(|size| match loan(size) {
             Ok(mut sample) => {
                 let buffer = payload::uninit_bytes_ptr(sample.payload_mut());
@@ -146,32 +157,37 @@ impl<S: Service> PublishSubscribeRelay<S> for Relay<S> {
 
 /// Builder for publish-subscribe [`Relay`]s.
 #[derive(Debug)]
-pub struct Builder<'a, S: Service> {
+pub struct Builder<'a, S: Service, M: Mapping<EndpointDescription = TopicDescription>> {
     node: Rc<RclNode>,
     type_registry: &'a TypeSupportRegistry,
-    static_config: &'a StaticConfig,
+    mapping: &'a M,
+    description: &'a ServiceDescription,
     wake: Option<Arc<WakeHandle<local_threadsafe::Service>>>,
     _phantom: core::marker::PhantomData<S>,
 }
 
-impl<'a, S: Service> Builder<'a, S> {
+impl<'a, S: Service, M: Mapping<EndpointDescription = TopicDescription>> Builder<'a, S, M> {
     pub fn new(
+        description: &'a ServiceDescription,
         node: Rc<RclNode>,
         type_registry: &'a TypeSupportRegistry,
-        static_config: &'a StaticConfig,
+        mapping: &'a M,
         wake: Option<Arc<WakeHandle<local_threadsafe::Service>>>,
     ) -> Self {
         Self {
             node,
             type_registry,
-            static_config,
+            mapping,
+            description,
             wake,
             _phantom: core::marker::PhantomData,
         }
     }
 }
 
-impl<S: Service> RelayBuilder for Builder<'_, S> {
+impl<S: Service, M: Mapping<EndpointDescription = TopicDescription>> RelayBuilder
+    for Builder<'_, S, M>
+{
     type CreationError = CreationError;
     type Relay = Relay<S>;
 
@@ -179,47 +195,43 @@ impl<S: Service> RelayBuilder for Builder<'_, S> {
     fn create(self) -> Result<Self::Relay, Self::CreationError> {
         let origin = "publish_subscribe::Relay::create";
 
-        let topic = fail!(from origin,
-            when mapping::topic(self.static_config.name().as_str()).ok_or(CreationError::InvalidServiceName),
-            "Failed to map service name to a ROS 2 topic"
-        );
+        let PatternDescription::PublishSubscribe(pattern_description) = &self.description.pattern
+        else {
+            unreachable!("relay is only built for publish-subscribe descriptions")
+        };
 
-        // The payload type name carries the ROS 2 type name.
-        let type_name = fail!(from origin,
-            when core::str::from_utf8(
-                self.static_config
-                    .publish_subscribe()
-                    .message_type_details()
-                    .payload
-                    .type_name(),
-            ),
-            with CreationError::InvalidTypeName,
-            "Failed to read the payload type name as UTF-8"
-        );
+        let Some(topic_description) = self.mapping.remote(self.description) else {
+            fail!(from origin, with CreationError::Mapping,
+                "Mapping does not map service '{}' to a ROS 2 topic",
+                self.description.name
+            );
+        };
 
+        let type_name = topic_description.type_name.as_str();
         let type_support = fail!(from origin,
             when self.type_registry.load(type_name),
             with CreationError::TypeSupport,
             "Failed to load typesupport for '{}'",
             type_name
         );
-        let topic_name = fail!(from origin,
-            when TopicName::new(topic),
-            with CreationError::InvalidTopic,
-            "Invalid ROS 2 topic name '{}'",
-            topic
-        );
+
+        let topic_name = TopicName::from(&topic_description.topic);
+        let qos = &topic_description.qos;
         let publisher = fail!(from origin,
-            when RclPublisherBuilder::new(Rc::clone(&self.node), &topic_name, Rc::clone(&type_support)).create(),
+            when RclPublisherBuilder::new(Rc::clone(&self.node), &topic_name, Rc::clone(&type_support))
+                .qos(qos.clone())
+                .create(),
             with CreationError::Publisher,
             "Failed to create ROS 2 publisher for topic '{}'",
-            topic
+            topic_name.as_str()
         );
         let mut subscription = fail!(from origin,
-            when RclSubscriptionBuilder::new(Rc::clone(&self.node), &topic_name, type_support).create(),
+            when RclSubscriptionBuilder::new(Rc::clone(&self.node), &topic_name, type_support)
+                .qos(qos.clone())
+                .create(),
             with CreationError::Subscription,
             "Failed to create ROS 2 subscription for topic '{}'",
-            topic
+            topic_name.as_str()
         );
 
         // Reactive mode: incoming ROS 2 data wakes the tunnel.
@@ -235,12 +247,8 @@ impl<S: Service> RelayBuilder for Builder<'_, S> {
         // Only services declaring the RosHeader user header receive the
         // remote origin; anything else (e.g. a header-less local service)
         // must not be written to.
-        let write_ros_header = self
-            .static_config
-            .publish_subscribe()
-            .message_type_details()
-            .user_header
-            == RosHeader::type_detail();
+        let write_ros_header =
+            pattern_description.user_header == TypeDescription::from(&RosHeader::type_detail());
 
         Ok(Relay {
             publisher,

@@ -21,7 +21,6 @@ use iceoryx2_ffi_macros::CStrRepr;
 use iceoryx2::service::attribute::{Attribute, AttributeKey, AttributeSet};
 use iceoryx2_bb_container::semantic_string::SemanticString;
 use iceoryx2_bb_elementary::CallbackProgression;
-use iceoryx2_bb_elementary::static_assert::*;
 use iceoryx2_bb_elementary_traits::AsCStr;
 use iceoryx2_ffi_macros::iceoryx2_ffi;
 
@@ -345,15 +344,15 @@ pub unsafe extern "C" fn iox2_attribute_set_key_value(
         let key = key.unwrap();
 
         *has_value = false;
-        if let Some(v) = (*handle).key_value(&key, index) {
-            if let Ok(value) = CString::new(v.as_bytes()) {
-                core::ptr::copy_nonoverlapping(
-                    value.as_ptr(),
-                    buffer,
-                    buffer_len.min(value.count_bytes() + 1 /* null terminator */),
-                );
-                *has_value = true;
-            }
+        if let Some(v) = (*handle).key_value(&key, index)
+            && let Ok(value) = CString::new(v.as_bytes())
+        {
+            core::ptr::copy_nonoverlapping(
+                value.as_ptr(),
+                buffer,
+                buffer_len.min(value.count_bytes() + 1 /* null terminator */),
+            );
+            *has_value = true;
         }
     }
 }

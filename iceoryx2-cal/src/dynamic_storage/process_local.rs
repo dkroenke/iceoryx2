@@ -61,7 +61,7 @@ use alloc::vec::Vec;
 
 use iceoryx2_bb_concurrency::atomic::AtomicBool;
 use iceoryx2_bb_concurrency::lazy_lock::LazyLock;
-use iceoryx2_bb_elementary_traits::allocator::BaseAllocator;
+use iceoryx2_bb_elementary_traits::allocator::{Allocate, Deallocate};
 use iceoryx2_bb_memory::heap_allocator::HeapAllocator;
 use iceoryx2_bb_posix::mutex::*;
 use iceoryx2_bb_system_types::file_name::FileName;
@@ -461,6 +461,10 @@ impl<'builder, T: Send + Sync + Debug + 'static + ZeroCopySend>
 {
     fn has_ownership(mut self, value: bool) -> Self {
         self.has_ownership = value;
+        self
+    }
+
+    fn enable_global_access(self, _value: bool) -> Self {
         self
     }
 

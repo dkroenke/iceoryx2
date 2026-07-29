@@ -42,7 +42,7 @@ use iceoryx2_bb_container::slotmap::SlotMap;
 use iceoryx2_bb_container::vector::polymorphic_vec::*;
 use iceoryx2_bb_elementary::CallbackProgression;
 use iceoryx2_bb_elementary::cyclic_tagger::CyclicTagger;
-use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
+use iceoryx2_bb_elementary_traits::iceoryx_send::IceoryxSend;
 use iceoryx2_bb_elementary_traits::testing::abandonable::Abandonable;
 use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
 use iceoryx2_bb_lock_free::mpmc::container::{ContainerHandle, ContainerState};
@@ -118,10 +118,8 @@ pub(crate) struct SubscriberSharedState<Service: service::Service> {
 impl<Service: service::Service> Abandonable for SubscriberSharedState<Service> {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
-        unsafe { Receiver::abandon_in_place(NonNull::iox2_from_mut(&mut this.receiver)) };
-        unsafe {
-            Service::StaticStorage::abandon_in_place(NonNull::iox2_from_mut(&mut this.port_tag))
-        };
+        unsafe { Receiver::abandon_in_place(NonNull::from_mut(&mut this.receiver)) };
+        unsafe { Service::StaticStorage::abandon_in_place(NonNull::from_mut(&mut this.port_tag)) };
     }
 }
 
@@ -129,8 +127,8 @@ impl<Service: service::Service> Abandonable for SubscriberSharedState<Service> {
 #[derive(Debug)]
 pub struct Subscriber<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized + 'static,
-    UserHeader: Debug + ZeroCopySend,
+    Payload: IceoryxSend + Debug + ?Sized + 'static,
+    UserHeader: ZeroCopySend + Debug,
 > {
     dynamic_subscriber_handle: ContainerHandle,
     subscriber_details: &'static SubscriberDetails,
@@ -142,7 +140,7 @@ pub struct Subscriber<
 
 unsafe impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > Send for Subscriber<Service, Payload, UserHeader>
 where
@@ -152,7 +150,7 @@ where
 
 unsafe impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > Sync for Subscriber<Service, Payload, UserHeader>
 where
@@ -162,14 +160,14 @@ where
 
 impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > Abandonable for Subscriber<Service, Payload, UserHeader>
 {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
         unsafe {
-            Service::ArcThreadSafetyPolicy::abandon_in_place(NonNull::iox2_from_mut(
+            Service::ArcThreadSafetyPolicy::abandon_in_place(NonNull::from_mut(
                 &mut this.subscriber_shared_state,
             ))
         };
@@ -178,7 +176,7 @@ impl<
 
 impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > Drop for Subscriber<Service, Payload, UserHeader>
 {
@@ -196,7 +194,7 @@ impl<
 
 impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > Subscriber<Service, Payload, UserHeader>
 {
@@ -299,13 +297,13 @@ impl<
                 enable_safe_overflow: static_config.enable_safe_overflow,
                 buffer_size,
                 tagger: CyclicTagger::new(),
-                to_be_removed_connections: Some(UnsafeCell::new(
+                to_be_removed_connections: UnsafeCell::new(
                     PolymorphicVec::new(
                         HeapAllocator::global(),
                         number_of_to_be_removed_connections,
                     )
                     .expect("Heap allocator provides memory."),
-                )),
+                ),
                 degradation_handler: config.degradation_handler,
                 number_of_channels: 1,
                 connection_storage: UnsafeCell::new(SlotMap::new(number_of_connections)),
@@ -431,7 +429,7 @@ impl<
 
 impl<
     Service: service::Service,
-    Payload: Debug + ZeroCopySend + ?Sized,
+    Payload: IceoryxSend + Debug + ?Sized,
     UserHeader: Debug + ZeroCopySend,
 > UpdateConnections for Subscriber<Service, Payload, UserHeader>
 {
@@ -455,7 +453,7 @@ impl<
     }
 }
 
-impl<Service: service::Service, Payload: Debug + ZeroCopySend, UserHeader: Debug + ZeroCopySend>
+impl<Service: service::Service, Payload: IceoryxSend + Debug, UserHeader: Debug + ZeroCopySend>
     Subscriber<Service, Payload, UserHeader>
 {
     /// Receives a [`crate::sample::Sample`] from [`crate::port::publisher::Publisher`]. If no sample could be

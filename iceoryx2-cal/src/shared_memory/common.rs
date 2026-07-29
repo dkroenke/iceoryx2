@@ -15,7 +15,8 @@ use core::mem::MaybeUninit;
 use core::ptr::NonNull;
 use core::{alloc::Layout, fmt::Debug};
 
-use iceoryx2_bb_elementary_traits::allocator::BaseAllocator;
+use iceoryx2_bb_elementary_traits::allocator::Allocate;
+use iceoryx2_bb_elementary_traits::allocator::ContentPlacement;
 use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
 use iceoryx2_bb_posix::system_configuration::SystemInfo;
 use iceoryx2_bb_system_types::file_name::FileName;
@@ -35,7 +36,6 @@ pub mod details {
     use alloc::vec::Vec;
 
     use iceoryx2_bb_derive_macros::ZeroCopySend;
-    use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
     use iceoryx2_bb_memory::bump_allocator::BumpAllocator;
     use pool_allocator::PoolAllocator;
 
@@ -201,6 +201,7 @@ pub mod details {
             details.payload_start_offset = (memory.as_ptr() as *const u8) as usize
                 - (details as *const AllocatorDetails<Allocator>) as usize;
 
+            let memory = NonNull::slice_from_raw_parts(memory, self.size);
             details.allocator.write(unsafe {
                 Allocator::new_uninit(SystemInfo::PageSize.value(), memory, allocator_config)
             });
@@ -357,7 +358,7 @@ pub mod details {
     {
         unsafe fn abandon_in_place(mut this: NonNull<Self>) {
             let this = unsafe { this.as_mut() };
-            unsafe { Storage::abandon_in_place(NonNull::iox2_from_mut(&mut this.storage)) };
+            unsafe { Storage::abandon_in_place(NonNull::from_mut(&mut this.storage)) };
         }
     }
 
@@ -458,8 +459,42 @@ pub mod details {
             unsafe { self.storage.get().allocator.assume_init_ref() }.max_alignment()
         }
 
-        fn allocate(&self, layout: core::alloc::Layout) -> Result<ShmPointer, ShmAllocationError> {
-            let offset = fail!(from self, when unsafe { self.storage.get().allocator.assume_init_ref().allocate(layout) },
+        fn payload_start_address(&self) -> usize {
+            self.payload_start_address
+        }
+    }
+
+    impl<Allocator: ShmAllocator + Debug, Storage: DynamicStorage<AllocatorDetails<Allocator>>>
+        Grow<ShmPointer> for Memory<Allocator, Storage>
+    {
+        unsafe fn grow(
+            &self,
+            ptr: ShmPointer,
+            old_layout: Layout,
+            new_layout: Layout,
+            placement: ContentPlacement,
+        ) -> Result<ShmPointer, AllocationGrowError> {
+            let offset = unsafe {
+                self.storage
+                    .get()
+                    .allocator
+                    .assume_init_ref()
+                    .assume_init()
+                    .grow(ptr.offset, old_layout, new_layout, placement)?
+            };
+
+            Ok(ShmPointer {
+                offset,
+                data_ptr: (offset.offset() + self.payload_start_address) as *mut u8,
+            })
+        }
+    }
+
+    impl<Allocator: ShmAllocator + Debug, Storage: DynamicStorage<AllocatorDetails<Allocator>>>
+        Allocate<ShmPointer> for Memory<Allocator, Storage>
+    {
+        fn allocate(&self, layout: core::alloc::Layout) -> Result<ShmPointer, AllocationError> {
+            let offset = fail!(from self, when unsafe { self.storage.get().allocator.assume_init_ref().assume_init().allocate(layout) },
             "Failed to allocate shared memory due to an internal allocator failure.");
 
             Ok(ShmPointer {
@@ -467,19 +502,20 @@ pub mod details {
                 data_ptr: (offset.offset() + self.payload_start_address) as *mut u8,
             })
         }
+    }
 
-        unsafe fn deallocate(&self, offset: PointerOffset, layout: core::alloc::Layout) {
+    impl<Allocator: ShmAllocator + Debug, Storage: DynamicStorage<AllocatorDetails<Allocator>>>
+        Deallocate<ShmPointer> for Memory<Allocator, Storage>
+    {
+        unsafe fn deallocate(&self, ptr: ShmPointer, layout: core::alloc::Layout) {
             unsafe {
                 self.storage
                     .get()
                     .allocator
                     .assume_init_ref()
-                    .deallocate(offset, layout);
+                    .assume_init()
+                    .deallocate(ptr.offset, layout);
             }
-        }
-
-        fn payload_start_address(&self) -> usize {
-            self.payload_start_address
         }
     }
 

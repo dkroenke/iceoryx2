@@ -74,7 +74,9 @@ use core::time::Duration;
 use alloc::string::String;
 
 use iceoryx2_bb_container::semantic_string::SemanticString;
-use iceoryx2_bb_elementary::{CallbackProgression, lazy_singleton::*};
+use iceoryx2_bb_elementary::{
+    CallbackProgression, allocation_strategy::AllocationStrategy, lazy_singleton::*,
+};
 use iceoryx2_bb_posix::{
     file::{FileBuilder, FileOpenError},
     shared_memory::AccessMode,
@@ -88,7 +90,6 @@ use serde::{Deserialize, Serialize};
 use iceoryx2_log::{debug, fail, fatal_panic, info, trace, warn};
 
 use crate::port::backpressure_strategy::BackpressureStrategy;
-use iceoryx2_cal::shm_allocator::AllocationStrategy;
 
 use iceoryx2_pal_configuration::ICEORYX2_ROOT_PATH;
 
@@ -642,17 +643,17 @@ impl Config {
         }
 
         // prio 2: lookup user config file
-        if let Ok(user_config) = Self::load_user_config_path(origin, msg) {
-            if callback(user_config) == CallbackProgression::Stop {
-                return Ok(());
-            }
+        if let Ok(user_config) = Self::load_user_config_path(origin, msg)
+            && callback(user_config) == CallbackProgression::Stop
+        {
+            return Ok(());
         }
 
         // prio 3: lookup global config file
-        if let Ok(global_config) = Self::load_global_config_path(origin, msg) {
-            if callback(global_config) == CallbackProgression::Stop {
-                return Ok(());
-            }
+        if let Ok(global_config) = Self::load_global_config_path(origin, msg)
+            && callback(global_config) == CallbackProgression::Stop
+        {
+            return Ok(());
         }
 
         Ok(())

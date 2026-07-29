@@ -79,17 +79,15 @@ use iceoryx2_bb_container::{queue::Queue, slotmap::SlotMap, vector::polymorphic_
 use iceoryx2_bb_concurrency::atomic::Ordering;
 use iceoryx2_bb_concurrency::atomic::{AtomicBool, AtomicU64, AtomicUsize};
 use iceoryx2_bb_concurrency::cell::UnsafeCell;
+use iceoryx2_bb_elementary::allocation_strategy::AllocationStrategy;
 use iceoryx2_bb_elementary::{CallbackProgression, cyclic_tagger::CyclicTagger};
-use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
 use iceoryx2_bb_elementary_traits::testing::abandonable::Abandonable;
 use iceoryx2_bb_elementary_traits::zero_copy_send::ZeroCopySend;
 use iceoryx2_bb_lock_free::mpmc::container::{ContainerHandle, ContainerState};
 use iceoryx2_bb_memory::heap_allocator::HeapAllocator;
 use iceoryx2_cal::zero_copy_connection::{CHANNEL_STATE_CLOSED, CHANNEL_STATE_OPEN};
 use iceoryx2_cal::{
-    arc_sync_policy::ArcSyncPolicy,
-    dynamic_storage::DynamicStorage,
-    shm_allocator::{AllocationStrategy, PointerOffset},
+    arc_sync_policy::ArcSyncPolicy, dynamic_storage::DynamicStorage, shm_allocator::PointerOffset,
     zero_copy_connection::ChannelId,
 };
 use iceoryx2_log::{fail, fatal_panic, warn};
@@ -189,11 +187,9 @@ pub(crate) struct ClientSharedState<Service: service::Service> {
 impl<Service: service::Service> Abandonable for ClientSharedState<Service> {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
-        unsafe { Sender::abandon_in_place(NonNull::iox2_from_mut(&mut this.request_sender)) };
-        unsafe { Receiver::abandon_in_place(NonNull::iox2_from_mut(&mut this.response_receiver)) };
-        unsafe {
-            Service::StaticStorage::abandon_in_place(NonNull::iox2_from_mut(&mut this.port_tag))
-        };
+        unsafe { Sender::abandon_in_place(NonNull::from_mut(&mut this.request_sender)) };
+        unsafe { Receiver::abandon_in_place(NonNull::from_mut(&mut this.response_receiver)) };
+        unsafe { Service::StaticStorage::abandon_in_place(NonNull::from_mut(&mut this.port_tag)) };
     }
 }
 
@@ -348,7 +344,7 @@ impl<
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
         unsafe {
-            Service::ArcThreadSafetyPolicy::abandon_in_place(NonNull::iox2_from_mut(
+            Service::ArcThreadSafetyPolicy::abandon_in_place(NonNull::from_mut(
                 &mut this.client_shared_state,
             ))
         };
@@ -551,10 +547,10 @@ impl<
             service_state: service.clone(),
             buffer_size: static_config.max_response_buffer_size,
             tagger: CyclicTagger::new(),
-            to_be_removed_connections: Some(UnsafeCell::new(
+            to_be_removed_connections: UnsafeCell::new(
                 PolymorphicVec::new(HeapAllocator::global(), number_of_to_be_removed_connections)
                     .expect("Heap allocator provides memory."),
-            )),
+            ),
             degradation_handler: client_factory.response_degradation_handler,
             message_type_details: static_config.response_message_type_details,
             receiver_max_borrowed_samples: static_config
@@ -797,7 +793,7 @@ impl<
         Ok(RequestMutUninit {
             request: RequestMut {
                 ptr,
-                sample_size: chunk.size,
+                sample_size: chunk.layout().size(),
                 channel_id,
                 offset_to_chunk: chunk.offset,
                 client_shared_state: self.client_shared_state.clone(),
@@ -1083,7 +1079,7 @@ impl<
         Ok(RequestMutUninit {
             request: RequestMut {
                 ptr,
-                sample_size: chunk.size,
+                sample_size: chunk.layout().size(),
                 channel_id,
                 offset_to_chunk: chunk.offset,
                 client_shared_state: self.client_shared_state.clone(),

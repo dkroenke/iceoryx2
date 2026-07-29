@@ -33,11 +33,11 @@ use iceoryx2_bb_container::string::String;
 use iceoryx2_bb_container::vector::Vector;
 use iceoryx2_bb_container::{flatmap::RelocatableFlatMap, vector::RelocatableVec};
 use iceoryx2_bb_derive_macros::ZeroCopySend;
-use iceoryx2_bb_elementary::static_assert::static_assert_eq;
+use iceoryx2_bb_elementary::static_assert_align_of;
 use iceoryx2_bb_elementary_traits::{
-    non_null::NonNullCompat, testing::abandonable::Abandonable, zero_copy_send::ZeroCopySend,
+    testing::abandonable::Abandonable, zero_copy_send::ZeroCopySend,
 };
-use iceoryx2_bb_memory::bump_allocator::BumpAllocator;
+use iceoryx2_bb_memory::bump_allocator::{Allocate, BumpAllocator};
 use iceoryx2_bb_posix::file::AccessMode;
 use iceoryx2_cal::dynamic_storage::{DynamicStorage, DynamicStorageBuilder};
 use iceoryx2_cal::event::NamedConceptMgmt;
@@ -64,19 +64,19 @@ pub struct KeyMemory<const CAPACITY: usize> {
 
 impl<const CAPACITY: usize> KeyMemory<CAPACITY> {
     pub fn try_from<T: Copy>(value: &T) -> Result<Self, KeyMemoryError> {
-        static_assert_eq::<{ align_of::<KeyMemory<1>>() }, MAX_BLACKBOARD_KEY_ALIGNMENT>();
+        static_assert_align_of!(KeyMemory<1>, MAX_BLACKBOARD_KEY_ALIGNMENT);
 
         let origin = "KeyMemory::try_from()";
         let msg = "Unable to create KeyMemory";
 
         // Replace if block with below compile-time assertion once available for generic parameters
-        // static_assert_le::<{ size_of::<T>() }, CAPACITY>();
+        // static_assert_size_of_le!(T, CAPACITY);
         if size_of::<T>() > CAPACITY {
             fail!(from origin, with KeyMemoryError::ValueTooLarge,
                 "{} since the passed value is too large. Its size must be <= {}.", msg, CAPACITY);
         }
         // Replace if block with below compile-time assertion once available for generic parameters
-        // static_assert_le::<{ align_of::<T>() }, MAX_BLACKBOARD_KEY_ALIGNMENT>();
+        // static_assert_align_of_le!(T, MAX_BLACKBOARD_KEY_ALIGNMENT);
         if align_of::<T>() > MAX_BLACKBOARD_KEY_ALIGNMENT {
             fail!(from origin, with KeyMemoryError::ValueAlignmentTooLarge,
                 "{} since the alignment of the passed value is too large. The alignment must be <= {}.",
@@ -94,7 +94,7 @@ impl<const CAPACITY: usize> KeyMemory<CAPACITY> {
     ///
     ///   * see Safety section of core::ptr::copy_nonoverlapping
     pub unsafe fn try_from_ptr(ptr: *const u8, key_layout: Layout) -> Result<Self, KeyMemoryError> {
-        static_assert_eq::<{ align_of::<KeyMemory<1>>() }, MAX_BLACKBOARD_KEY_ALIGNMENT>();
+        static_assert_align_of!(KeyMemory<1>, MAX_BLACKBOARD_KEY_ALIGNMENT);
 
         let origin = "KeyMemory::try_from_ptr()";
         let msg = "Unable to create KeyMemory";
@@ -186,12 +186,10 @@ impl<ServiceType: service::Service> Abandonable for BlackboardResources<ServiceT
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
         unsafe {
-            ServiceType::BlackboardMgmt::<Mgmt>::abandon_in_place(NonNull::iox2_from_mut(
-                &mut this.mgmt,
-            ))
+            ServiceType::BlackboardMgmt::<Mgmt>::abandon_in_place(NonNull::from_mut(&mut this.mgmt))
         };
         unsafe {
-            ServiceType::BlackboardPayload::abandon_in_place(NonNull::iox2_from_mut(&mut this.data))
+            ServiceType::BlackboardPayload::abandon_in_place(NonNull::from_mut(&mut this.data))
         };
     }
 }
@@ -316,7 +314,7 @@ impl<ServiceType: service::Service> ServiceResource for BlackboardResources<Serv
 
         let shm_config = blackboard_data_config::<ServiceType>(shared_node.config());
         let payload_shm = match <<ServiceType::BlackboardPayload as SharedMemory<
-            iceoryx2_cal::shm_allocator::shm_bump_allocator::BumpAllocator,
+            iceoryx2_cal::shm_allocator::bump_allocator::BumpAllocator,
         >>::Builder as NamedConceptBuilder<ServiceType::BlackboardPayload>>::new(
             &name
         )
@@ -359,14 +357,14 @@ impl<ServiceType: service::Service> ServiceResource for BlackboardResources<Serv
             payload_size += i.internal_value_size + i.internal_value_alignment - 1;
         }
         let payload_shm = match <<ServiceType::BlackboardPayload as SharedMemory<
-            iceoryx2_cal::shm_allocator::shm_bump_allocator::BumpAllocator,
+            iceoryx2_cal::shm_allocator::bump_allocator::BumpAllocator,
         >>::Builder as NamedConceptBuilder<ServiceType::BlackboardPayload>>::new(
             &name
         )
         .config(&shm_config)
         .has_ownership(true)
         .size(payload_size)
-        .create(&iceoryx2_cal::shared_memory::shm_bump_allocator::Config::default())
+        .create(&iceoryx2_cal::shared_memory::bump_allocator::Config::default())
         {
             Ok(v) => v,
             Err(_) => {

@@ -66,7 +66,12 @@ use core::{fmt::Debug, time::Duration};
 
 pub use crate::shm_allocator::*;
 use crate::static_storage::file::{NamedConcept, NamedConceptBuilder, NamedConceptMgmt};
-use iceoryx2_bb_elementary_traits::testing::abandonable::Abandonable;
+use iceoryx2_bb_elementary_traits::{
+    allocator::{Allocation, Deallocate, Grow},
+    pointer::Pointer,
+    testing::abandonable::Abandonable,
+};
+use iceoryx2_bb_memory::bump_allocator::Allocate;
 use iceoryx2_bb_posix::file::AccessMode;
 use iceoryx2_bb_system_types::file_name::*;
 use pool_allocator::PoolAllocator;
@@ -112,10 +117,26 @@ impl core::error::Error for SharedMemoryOpenError {}
 /// Represents a pointer pointing to some [`SharedMemory`]. Consists of the actual data pointer and
 /// an [`PointerOffset`] which can be used in combination with a
 /// [`crate::zero_copy_connection::ZeroCopyConnection`]
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub struct ShmPointer {
     pub offset: PointerOffset,
     pub data_ptr: *mut u8,
+}
+
+impl Allocation for ShmPointer {}
+
+impl Pointer<u8> for ShmPointer {
+    fn as_mut_ptr(&mut self) -> *mut u8 {
+        self.data_ptr
+    }
+
+    fn as_ptr(&self) -> *const u8 {
+        self.data_ptr
+    }
+
+    fn is_initialized(&self) -> bool {
+        true
+    }
 }
 
 #[doc(hidden)]
@@ -167,6 +188,9 @@ pub trait SharedMemory<Allocator: ShmAllocator>:
     + details::SharedMemoryLowLevelAPI<Allocator>
     + Send
     + Abandonable
+    + Allocate<ShmPointer>
+    + Deallocate<ShmPointer>
+    + Grow<ShmPointer>
 {
     type Builder: SharedMemoryBuilder<Allocator, Self>;
 
@@ -179,19 +203,6 @@ pub trait SharedMemory<Allocator: ShmAllocator>:
     /// Returns the start address of the shared memory. Used by the [`ShmPointer`] to calculate
     /// the actual memory position.
     fn payload_start_address(&self) -> usize;
-
-    /// Allocates memory. The alignment in the layout must be smaller or equal
-    /// [`SharedMemory::max_alignment()`] otherwise the method will fail.
-    fn allocate(&self, layout: core::alloc::Layout) -> Result<ShmPointer, ShmAllocationError>;
-
-    /// Release previously allocated memory
-    ///
-    /// # Safety
-    ///
-    ///  * the offset must be acquired with [`SharedMemory::allocate()`] - extracted from the
-    ///    [`ShmPointer`]
-    ///  * the layout must be identical to the one used in [`SharedMemory::allocate()`]
-    unsafe fn deallocate(&self, offset: PointerOffset, layout: core::alloc::Layout);
 
     /// Returns if the [`SharedMemory`] supports persistency, meaning that the underlying OS
     /// resource remain even when every [`SharedMemory`] instance in every process was removed.
@@ -219,7 +230,7 @@ pub trait SharedMemoryForPoolAllocator: SharedMemory<PoolAllocator> {
     ///
     /// # Safety
     ///
-    ///  * the offset must be acquired with [`SharedMemory::allocate()`] - extracted from the
+    ///  * the offset must be acquired with [`Allocate::allocate()`] - extracted from the
     ///    [`ShmPointer`]
     unsafe fn deallocate_bucket(&self, offset: PointerOffset);
 

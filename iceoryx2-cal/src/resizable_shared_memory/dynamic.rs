@@ -26,8 +26,10 @@ use iceoryx2_bb_concurrency::cell::UnsafeCell;
 use iceoryx2_bb_container::semantic_string::SemanticString;
 use iceoryx2_bb_container::slotmap::{SlotMap, SlotMapKey};
 use iceoryx2_bb_container::string::String;
-use iceoryx2_bb_elementary_traits::allocator::AllocationError;
-use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
+use iceoryx2_bb_elementary::allocation_strategy::AllocationStrategy;
+use iceoryx2_bb_elementary_traits::allocator::{
+    Allocate, AllocationError, AllocationGrowError, ContentPlacement, Deallocate, Grow,
+};
 use iceoryx2_bb_elementary_traits::testing::abandonable::Abandonable;
 use iceoryx2_bb_posix::file::AccessMode;
 use iceoryx2_bb_system_types::file_name::FileName;
@@ -36,20 +38,17 @@ use iceoryx2_log::fatal_panic;
 use iceoryx2_log::{fail, warn};
 
 use crate::shared_memory::{
-    AllocationStrategy, SegmentId, SharedMemoryForPoolAllocator, ShmPointer,
-};
-use crate::shared_memory::{
     PointerOffset, SharedMemory, SharedMemoryBuilder, SharedMemoryCreateError,
     SharedMemoryOpenError, ShmAllocator,
 };
-use crate::shm_allocator::ShmAllocationError;
+use crate::shared_memory::{SegmentId, SharedMemoryForPoolAllocator, ShmPointer};
 use crate::shm_allocator::pool_allocator::PoolAllocator;
 
 use super::{
     NamedConcept, NamedConceptBuilder, NamedConceptDoesExistError, NamedConceptListError,
     NamedConceptMgmt, NamedConceptRemoveError, ResizableSharedMemory, ResizableSharedMemoryBuilder,
     ResizableSharedMemoryForPoolAllocator, ResizableSharedMemoryView,
-    ResizableSharedMemoryViewBuilder, ResizableShmAllocationError,
+    ResizableSharedMemoryViewBuilder,
 };
 
 const MAX_NUMBER_OF_REALLOCATIONS: usize = SegmentId::max_segment_id() as usize + 1;
@@ -94,7 +93,7 @@ impl<Allocator: ShmAllocator, Shm: SharedMemory<Allocator>> Abandonable
 {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
-        unsafe { SlotMap::abandon_in_place(NonNull::iox2_from_mut(&mut this.shared_memory_map)) };
+        unsafe { SlotMap::abandon_in_place(NonNull::from_mut(&mut this.shared_memory_map)) };
     }
 }
 
@@ -110,7 +109,7 @@ impl<Allocator: ShmAllocator, Shm: SharedMemory<Allocator>> Abandonable
 {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
-        unsafe { Shm::abandon_in_place(NonNull::iox2_from_mut(&mut this.shm)) };
+        unsafe { Shm::abandon_in_place(NonNull::from_mut(&mut this.shm)) };
     }
 }
 
@@ -340,10 +339,8 @@ impl<Allocator: ShmAllocator, Shm: SharedMemory<Allocator>> Abandonable
 {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
-        unsafe { Shm::abandon_in_place(NonNull::iox2_from_mut(&mut this.mgmt_segment)) };
-        unsafe {
-            SlotMap::abandon_in_place(NonNull::iox2_from_mut(this.shared_memory_map.get_mut()))
-        };
+        unsafe { Shm::abandon_in_place(NonNull::from_mut(&mut this.mgmt_segment)) };
+        unsafe { SlotMap::abandon_in_place(NonNull::from_mut(this.shared_memory_map.get_mut())) };
     }
 }
 
@@ -360,10 +357,10 @@ where
         }
 
         let old_key = SlotMapKey::new(old_idx);
-        if let Some(shm) = shared_memory_map.get(old_key) {
-            if shm.chunk_count.load(Ordering::Relaxed) == 0 {
-                shared_memory_map.remove(old_key);
-            }
+        if let Some(shm) = shared_memory_map.get(old_key)
+            && shm.chunk_count.load(Ordering::Relaxed) == 0
+        {
+            shared_memory_map.remove(old_key);
         }
     }
 }
@@ -447,7 +444,7 @@ impl<Allocator: ShmAllocator, Shm: SharedMemory<Allocator>> Abandonable
 {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
-        unsafe { Shm::abandon_in_place(NonNull::iox2_from_mut(&mut this.mgmt_segment)) };
+        unsafe { Shm::abandon_in_place(NonNull::from_mut(&mut this.mgmt_segment)) };
     }
 }
 
@@ -490,12 +487,12 @@ where
         };
 
         for raw_name in &raw_names {
-            if let Some((extracted_name, _)) = Self::extract_name_and_segment_id(raw_name) {
-                if *name == extracted_name {
-                    fail!(from origin, when unsafe { Shm::remove_cfg(raw_name, config)},
+            if let Some((extracted_name, _)) = Self::extract_name_and_segment_id(raw_name)
+                && *name == extracted_name
+            {
+                fail!(from origin, when unsafe { Shm::remove_cfg(raw_name, config)},
                         "{msg} since the underlying SharedMemory could not be removed.");
-                    shm_removed = true;
-                }
+                shm_removed = true;
             }
         }
 
@@ -553,10 +550,10 @@ where
 
     fn extract_name_from_management_segment(name: &FileName) -> Option<FileName> {
         let mut name = *name;
-        if let Ok(true) = name.strip_suffix(MANAGEMENT_SUFFIX) {
-            if let Ok(true) = name.strip_suffix(SEGMENT_ID_SEPARATOR) {
-                return Some(name);
-            }
+        if let Ok(true) = name.strip_suffix(MANAGEMENT_SUFFIX)
+            && let Ok(true) = name.strip_suffix(SEGMENT_ID_SEPARATOR)
+        {
+            return Some(name);
         }
 
         None
@@ -650,11 +647,7 @@ where
         Shm::Builder::new(&adjusted_name).config(config)
     }
 
-    fn create_resized_segment(
-        &self,
-        shm: &Shm,
-        layout: Layout,
-    ) -> Result<(), ResizableShmAllocationError> {
+    fn create_resized_segment(&self, shm: &Shm, layout: Layout) -> Result<(), AllocationError> {
         let msg = "Unable to create resized segment for";
         let state = self.state_mut();
         let adjusted_segment_setup = shm
@@ -664,17 +657,23 @@ where
         let segment_id = if new_number_of_reallocations < MAX_NUMBER_OF_REALLOCATIONS {
             SlotMapKey::new(new_number_of_reallocations)
         } else {
-            fail!(from self, with ResizableShmAllocationError::MaxReallocationsReached,
+            fail!(from self, with AllocationError::OutOfMemory,
                 "{msg} {:?} since it would exceed the maximum amount of reallocations of {}. With a better configuration hint, this issue can be avoided.",
                 layout, Self::max_number_of_reallocations());
         };
 
         state.builder_config.allocator_config_hint = adjusted_segment_setup.config;
-        let shm = Self::create_segment(
+        let shm = match Self::create_segment(
             &state.builder_config,
             SegmentId::new(segment_id.value() as u8),
             adjusted_segment_setup.payload_size,
-        )?;
+        ) {
+            Ok(shm) => shm,
+            Err(e) => {
+                fail!(from self, with AllocationError::OutOfMemory,
+                    "{msg} {:?} to store the additional requested memory therefore the instance is out-of-memory. [{e:?}]", layout);
+            }
+        };
 
         match state.shared_memory_map.get(state.current_idx) {
             Some(segment) => {
@@ -699,26 +698,18 @@ where
 
     fn handle_reallocation(
         &self,
-        e: ShmAllocationError,
         state: &InternalState<Allocator, Shm>,
         layout: Layout,
         shm: &Shm,
-    ) -> Result<(), ResizableShmAllocationError> {
+    ) -> Result<(), AllocationError> {
         let msg = "Unable to allocate memory";
-        if e == ShmAllocationError::AllocationError(AllocationError::OutOfMemory)
-            || e == ShmAllocationError::ExceedsMaxSupportedAlignment
-            || e == ShmAllocationError::AllocationError(AllocationError::SizeTooLarge)
-        {
-            if state.shared_state.allocation_strategy == AllocationStrategy::Static {
-                fail!(from self, with e.into(),
-                                    "{msg} since there is not enough memory left ({:?}) and the allocation strategy {:?} forbids reallocation.",
-                                    e, state.shared_state.allocation_strategy);
-            } else {
-                self.create_resized_segment(shm, layout)?;
-                Ok(())
-            }
+        if state.shared_state.allocation_strategy == AllocationStrategy::Static {
+            fail!(from self, with AllocationError::OutOfMemory,
+                  "{msg} since there is not enough memory left and the allocation strategy {:?} forbids reallocation.",
+                  state.shared_state.allocation_strategy);
         } else {
-            fail!(from self, with e.into(), "{msg} due to {:?}.", e);
+            self.create_resized_segment(shm, layout)?;
+            Ok(())
         }
     }
 
@@ -740,6 +731,16 @@ where
             }
             None => fatal_panic!(from self,
                         "This should never happen! Unable to deallocate {:?} since the corresponding shared memory segment is not available!", offset),
+        }
+    }
+
+    fn current_segment(&self, msg: &str) -> &ShmEntry<Allocator, Shm> {
+        match self.state().shared_memory_map.get(self.state().current_idx) {
+            Some(entry) => entry,
+            None => {
+                fatal_panic!(from self,
+                             "This should never happen! {msg} since the current shared memory segment is not available!");
+            }
         }
     }
 }
@@ -783,30 +784,125 @@ where
         self.state().shared_memory_map.len()
     }
 
-    fn allocate(&self, layout: Layout) -> Result<ShmPointer, ResizableShmAllocationError> {
+    fn allocation_strategy(&self) -> AllocationStrategy {
+        self.state().shared_state.allocation_strategy
+    }
+}
+
+impl<Allocator: ShmAllocator, Shm: SharedMemory<Allocator>> Allocate<ShmPointer>
+    for DynamicMemory<Allocator, Shm>
+where
+    Shm::Builder: Debug,
+{
+    fn allocate(&self, layout: Layout) -> Result<ShmPointer, AllocationError> {
         let msg = "Unable to allocate memory";
         let state = self.state_mut();
 
         loop {
-            match state.shared_memory_map.get(state.current_idx) {
-                Some(entry) => match entry.shm.allocate(layout) {
-                    Ok(mut ptr) => {
-                        entry.register_offset();
-                        ptr.offset
-                            .set_segment_id(SegmentId::new(state.current_idx.value() as u8));
-                        return Ok(ptr);
-                    }
-                    Err(e) => self.handle_reallocation(e, state, layout, &entry.shm)?,
-                },
-                None => fatal_panic!(from self,
-                        "This should never happen! {msg} since the current shared memory segment is not available!"),
+            let current_segment = self.current_segment(msg);
+            match current_segment.shm.allocate(layout) {
+                Ok(mut ptr) => {
+                    current_segment.register_offset();
+                    ptr.offset
+                        .set_segment_id(SegmentId::new(state.current_idx.value() as u8));
+                    return Ok(ptr);
+                }
+                Err(AllocationError::OutOfMemory)
+                | Err(AllocationError::SizeTooLarge)
+                | Err(AllocationError::AlignmentFailure) => {
+                    self.handle_reallocation(state, layout, &current_segment.shm)?
+                }
+                Err(e) => {
+                    fail!(from self, with e, "{msg} due to {e:?}.");
+                }
             }
         }
     }
+}
 
-    unsafe fn deallocate(&self, offset: PointerOffset, layout: Layout) {
+impl<Allocator: ShmAllocator, Shm: SharedMemory<Allocator>> Grow<ShmPointer>
+    for DynamicMemory<Allocator, Shm>
+where
+    Shm::Builder: Debug,
+{
+    unsafe fn grow(
+        &self,
+        old_pointer: ShmPointer,
+        old_layout: Layout,
+        new_layout: Layout,
+        placement: ContentPlacement,
+    ) -> Result<ShmPointer, AllocationGrowError> {
+        let msg = "Unable to grow memory";
+        let state = self.state_mut();
+
+        let current_segment = self.current_segment(msg);
+
+        match unsafe {
+            current_segment
+                .shm
+                .grow(old_pointer, old_layout, new_layout, placement)
+        } {
+            Ok(mut ptr) => {
+                ptr.offset
+                    .set_segment_id(SegmentId::new(state.current_idx.value() as u8));
+                return Ok(ptr);
+            }
+            Err(AllocationGrowError::OutOfMemory) => {
+                self.handle_reallocation(state, new_layout, &current_segment.shm)?
+            }
+            Err(e) => {
+                fail!(from self, with e,
+                        "{msg} due to {e:?}.");
+            }
+        }
+
+        let resized_segment = self.current_segment(msg);
+
+        let new_pointer = match resized_segment.shm.allocate(new_layout) {
+            Ok(mut ptr) => {
+                resized_segment.register_offset();
+                ptr.offset
+                    .set_segment_id(SegmentId::new(state.current_idx.value() as u8));
+                ptr
+            }
+            Err(e) => {
+                fail!(from self, with e.into(),
+                    "{msg} since a resize and new allocation in a new segment failed. [{e:?}]");
+            }
+        };
+
+        match placement {
+            ContentPlacement::Front => unsafe {
+                core::ptr::copy_nonoverlapping(
+                    old_pointer.data_ptr,
+                    new_pointer.data_ptr,
+                    old_layout.size(),
+                )
+            },
+            ContentPlacement::Back => unsafe {
+                let offset = new_layout.size() - old_layout.size();
+                core::ptr::copy_nonoverlapping(
+                    old_pointer.data_ptr,
+                    new_pointer.data_ptr.add(offset),
+                    old_layout.size(),
+                );
+            },
+        }
+
+        unsafe { self.deallocate(old_pointer, old_layout) };
+
+        Ok(new_pointer)
+    }
+}
+
+impl<Allocator: ShmAllocator, Shm: SharedMemory<Allocator>> Deallocate<ShmPointer>
+    for DynamicMemory<Allocator, Shm>
+where
+    Shm::Builder: Debug,
+{
+    unsafe fn deallocate(&self, ptr: ShmPointer, layout: Layout) {
         unsafe {
-            self.perform_deallocation(offset, |entry| entry.shm.deallocate(offset, layout));
+            self.perform_deallocation(ptr.offset, |entry| entry.shm.deallocate(ptr, layout));
         }
     }
 }

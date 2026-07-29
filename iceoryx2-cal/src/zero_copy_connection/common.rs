@@ -12,19 +12,16 @@
 
 #[doc(hidden)]
 pub mod details {
+    use alloc::vec;
+    use alloc::vec::Vec;
     use core::fmt::Debug;
     use core::marker::PhantomData;
     use core::ptr::NonNull;
     use iceoryx2_bb_concurrency::atomic::Ordering;
-
-    use alloc::vec;
-    use alloc::vec::Vec;
-
     use iceoryx2_bb_concurrency::atomic::{AtomicU8, AtomicU64, AtomicUsize};
     use iceoryx2_bb_concurrency::cell::UnsafeCell;
     use iceoryx2_bb_container::vector::relocatable_vec::*;
-    use iceoryx2_bb_elementary_traits::allocator::{AllocationError, BaseAllocator};
-    use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
+    use iceoryx2_bb_elementary_traits::allocator::{Allocate, AllocationError};
     use iceoryx2_bb_elementary_traits::relocatable_container::RelocatableContainer;
     use iceoryx2_bb_lock_free::spsc::{
         index_queue::RelocatableIndexQueue,
@@ -157,7 +154,10 @@ pub mod details {
             RelocatableUsedChunkList::const_memory_size(number_of_samples)
         }
 
-        unsafe fn init<T: BaseAllocator>(&mut self, allocator: &T) -> Result<(), AllocationError> {
+        unsafe fn init<T: Allocate<NonNull<u8>>>(
+            &mut self,
+            allocator: &T,
+        ) -> Result<(), AllocationError> {
             unsafe { self.used_chunk_list.init(allocator) }
         }
     }
@@ -625,7 +625,7 @@ pub mod details {
     impl<Storage: DynamicStorage<SharedManagementData>> Abandonable for Sender<Storage> {
         unsafe fn abandon_in_place(mut this: NonNull<Self>) {
             let this = unsafe { this.as_mut() };
-            unsafe { Storage::abandon_in_place(NonNull::iox2_from_mut(&mut this.storage)) };
+            unsafe { Storage::abandon_in_place(NonNull::from_mut(&mut this.storage)) };
         }
     }
 
@@ -698,7 +698,7 @@ pub mod details {
             segment_details
                 .sample_size
                 .store(sample_size, Ordering::Relaxed);
-            debug_assert!(ptr.offset() % sample_size == 0);
+            debug_assert!(ptr.offset().is_multiple_of(sample_size));
             let index = ptr.offset() / sample_size;
 
             debug_assert!(segment_id < storage.number_of_segments as usize);
@@ -718,9 +718,9 @@ pub mod details {
                     let segment_details =
                         storage.get_segment_details(segment_id, channel_id.value());
                     debug_assert!(
-                        pointer_offset.offset()
-                            % segment_details.sample_size.load(Ordering::Relaxed)
-                            == 0
+                        pointer_offset
+                            .offset()
+                            .is_multiple_of(segment_details.sample_size.load(Ordering::Relaxed))
                     );
                     let index = pointer_offset.offset()
                         / segment_details.sample_size.load(Ordering::Relaxed);
@@ -849,9 +849,9 @@ pub mod details {
                     let segment_details =
                         storage.get_segment_details(segment_id, channel_id.value());
                     debug_assert!(
-                        pointer_offset.offset()
-                            % segment_details.sample_size.load(Ordering::Relaxed)
-                            == 0
+                        pointer_offset
+                            .offset()
+                            .is_multiple_of(segment_details.sample_size.load(Ordering::Relaxed))
                     );
                     let index = pointer_offset.offset()
                         / segment_details.sample_size.load(Ordering::Relaxed);
@@ -921,7 +921,7 @@ pub mod details {
     impl<Storage: DynamicStorage<SharedManagementData>> Abandonable for Receiver<Storage> {
         unsafe fn abandon_in_place(mut this: NonNull<Self>) {
             let this = unsafe { this.as_mut() };
-            unsafe { Storage::abandon_in_place(NonNull::iox2_from_mut(&mut this.storage)) };
+            unsafe { Storage::abandon_in_place(NonNull::from_mut(&mut this.storage)) };
         }
     }
 

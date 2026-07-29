@@ -21,10 +21,13 @@ use alloc::vec::Vec;
 use iceoryx2_bb_concurrency::atomic::AtomicUsize;
 use iceoryx2_bb_concurrency::cell::UnsafeCell;
 use iceoryx2_bb_elementary::cyclic_tagger::*;
-use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
+use iceoryx2_bb_elementary_traits::allocator::{
+    AllocationError, AllocationGrowError, ContentPlacement, Grow,
+};
 use iceoryx2_bb_elementary_traits::testing::abandonable::Abandonable;
 use iceoryx2_cal::named_concept::NamedConceptBuilder;
-use iceoryx2_cal::shm_allocator::{AllocationError, PointerOffset, ShmAllocationError};
+use iceoryx2_cal::shared_memory::ShmPointer;
+use iceoryx2_cal::shm_allocator::PointerOffset;
 use iceoryx2_cal::zero_copy_connection::{
     BackpressureToReceiverAction, ChannelId, ChannelState, ZeroCopyConnection,
     ZeroCopyConnectionBuilder, ZeroCopyCreationError, ZeroCopyPortDetails, ZeroCopySendError,
@@ -69,7 +72,7 @@ impl<Service: service::Service, Resource: ServiceResource> Abandonable
         let this = unsafe { this.as_mut() };
         unsafe {
             <Service::Connection as ZeroCopyConnection>::Sender::abandon_in_place(
-                NonNull::iox2_from_mut(&mut this.sender),
+                NonNull::from_mut(&mut this.sender),
             )
         };
     }
@@ -149,26 +152,46 @@ pub(crate) struct Sender<Service: service::Service, Resource: ServiceResource> {
     pub(crate) initial_channel_state: ChannelState,
 }
 
+impl<Service: service::Service, Resource: ServiceResource> Grow<ShmPointer>
+    for Sender<Service, Resource>
+{
+    unsafe fn grow(
+        &self,
+        ptr: ShmPointer,
+        old_layout: Layout,
+        new_layout: Layout,
+        content_placement: ContentPlacement,
+    ) -> Result<ShmPointer, AllocationGrowError> {
+        let new_ptr = unsafe {
+            self.data_segment
+                .grow(ptr, old_layout, new_layout, content_placement)
+        }?;
+
+        if ptr.offset != new_ptr.offset {
+            self.borrow_sample(new_ptr.offset);
+            self.untrack_sample(ptr.offset);
+        }
+
+        Ok(new_ptr)
+    }
+}
+
 impl<Service: service::Service, Resource: ServiceResource> Abandonable
     for Sender<Service, Resource>
 {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
         unsafe {
-            SharedNode::<Service>::abandon_in_place(NonNull::iox2_from_mut(&mut this.shared_node))
+            SharedNode::<Service>::abandon_in_place(NonNull::from_mut(&mut this.shared_node))
         };
+        unsafe { SharedServiceState::abandon_in_place(NonNull::from_mut(&mut this.service_state)) };
         unsafe {
-            SharedServiceState::abandon_in_place(NonNull::iox2_from_mut(&mut this.service_state))
-        };
-        unsafe {
-            DataSegment::<Service>::abandon_in_place(NonNull::iox2_from_mut(&mut this.data_segment))
+            DataSegment::<Service>::abandon_in_place(NonNull::from_mut(&mut this.data_segment))
         };
 
         for connection in &mut this.connections {
             if let Some(c) = connection.get_mut() {
-                unsafe {
-                    Connection::<Service, Resource>::abandon_in_place(NonNull::iox2_from_mut(c))
-                };
+                unsafe { Connection::<Service, Resource>::abandon_in_place(NonNull::from_mut(c)) };
             }
         }
     }
@@ -190,10 +213,10 @@ impl<Service: service::Service, Resource: ServiceResource> Sender<Service, Resou
 
     pub(crate) fn get_connection_id_of(&self, receiver_port_id: u128) -> Option<usize> {
         for i in 0..self.len() {
-            if let Some(connection) = self.get(i) {
-                if connection.receiver_port_id == receiver_port_id {
-                    return Some(i);
-                }
+            if let Some(connection) = self.get(i)
+                && connection.receiver_port_id == receiver_port_id
+            {
+                return Some(i);
             }
         }
 
@@ -461,12 +484,11 @@ impl<Service: service::Service, Resource: ServiceResource> Sender<Service, Resou
 
         let shm_pointer = match self.data_segment.allocate(layout) {
             Ok(chunk) => chunk,
-            Err(ShmAllocationError::AllocationError(AllocationError::OutOfMemory)) => {
+            Err(AllocationError::OutOfMemory) => {
                 fail!(from self, with LoanError::OutOfMemory,
                     "{} {:?} since the underlying shared memory is out of memory.", msg, layout);
             }
-            Err(ShmAllocationError::AllocationError(AllocationError::SizeTooLarge))
-            | Err(ShmAllocationError::AllocationError(AllocationError::AlignmentFailure)) => {
+            Err(AllocationError::SizeTooLarge) | Err(AllocationError::AlignmentFailure) => {
                 fatal_panic!(from self, "{} {:?} since the system seems to be corrupted.", msg, layout);
             }
             Err(v) => {
@@ -521,10 +543,12 @@ impl<Service: service::Service, Resource: ServiceResource> Sender<Service, Resou
         }
     }
 
+    pub(crate) fn untrack_sample(&self, offset: PointerOffset) -> u64 {
+        self.segment_states[offset.segment_id().value() as usize].release_sample(offset.offset())
+    }
+
     pub(crate) fn release_sample(&self, offset: PointerOffset) {
-        if self.segment_states[offset.segment_id().value() as usize].release_sample(offset.offset())
-            == 1
-        {
+        if self.untrack_sample(offset) == 1 {
             unsafe {
                 self.data_segment.deallocate_bucket(offset);
             }
@@ -608,10 +632,10 @@ impl<Service: service::Service, Resource: ServiceResource> Sender<Service, Resou
 
     pub(crate) fn finish_update_connection_cycle(&self) {
         for n in 0..self.len() {
-            if let Some(connection) = self.get(n) {
-                if !connection.was_tagged_by(&self.tagger) {
-                    self.remove_connection(n);
-                }
+            if let Some(connection) = self.get(n)
+                && !connection.was_tagged_by(&self.tagger)
+            {
+                self.remove_connection(n);
             }
         }
     }

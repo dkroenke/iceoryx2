@@ -53,7 +53,6 @@ use iceoryx2_bb_concurrency::atomic::AtomicBool;
 use iceoryx2_bb_concurrency::atomic::Ordering;
 use iceoryx2_bb_concurrency::lazy_lock::LazyLock;
 use iceoryx2_bb_concurrency::spin_lock::SpinLock;
-use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
 use iceoryx2_bb_posix::adaptive_wait::AdaptiveWaitBuilder;
 use iceoryx2_bb_posix::mutex::*;
 use iceoryx2_log::{fail, fatal_panic};
@@ -137,7 +136,7 @@ pub struct Locked {
 impl Abandonable for Locked {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
-        unsafe { Storage::abandon_in_place(NonNull::iox2_from_mut(&mut this.storage)) };
+        unsafe { Storage::abandon_in_place(NonNull::from_mut(&mut this.storage)) };
     }
 }
 
@@ -172,27 +171,63 @@ impl StaticStorageLocked<Storage> for Locked {
 }
 
 #[derive(Debug)]
+pub struct StorageView {
+    content: Arc<StorageContent>,
+}
+
+impl Abandonable for StorageView {
+    unsafe fn abandon_in_place(mut this: NonNull<Self>) {
+        let this = unsafe { this.as_mut() };
+        unsafe { core::ptr::drop_in_place(&mut this.content) };
+    }
+}
+
+impl StaticStorageView for StorageView {
+    fn len(&self) -> u64 {
+        self.content.value.blocking_lock().len() as u64
+    }
+
+    fn is_empty(&self) -> bool {
+        self.content.value.blocking_lock().is_empty()
+    }
+
+    fn read(&self, content: &mut [u8]) -> Result<(), StaticStorageReadError> {
+        let msg = "Failed to read from storage";
+        let value = self.content.value.blocking_lock();
+        if value.len() > content.len() {
+            fail!(from self, with StaticStorageReadError::BufferTooSmall,
+                    "{} since the provided buffer with a size of {} bytes is too small. Require at least a size of {} bytes.",
+                    msg, content.len(), value.len() );
+        }
+
+        content.clone_from_slice(value.as_slice());
+
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
 pub struct Storage {
     name: FileName,
     has_ownership: AtomicBool,
     config: Configuration,
-    content: Arc<StorageContent>,
+    view: StorageView,
 }
 
 impl Abandonable for Storage {
     unsafe fn abandon_in_place(mut this: NonNull<Self>) {
         let this = unsafe { this.as_mut() };
         this.has_ownership.store(false, Ordering::Relaxed);
-        unsafe { core::ptr::drop_in_place(this) };
+        unsafe { StorageView::abandon_in_place(NonNull::from_mut(&mut this.view)) };
     }
 }
 
 impl Drop for Storage {
     fn drop(&mut self) {
-        if self.has_ownership.load(Ordering::Relaxed) {
-            if let Err(v) = unsafe { Self::remove_cfg(&self.name, &self.config) } {
-                fatal_panic!(from self, "This should never happen! Failed to remove underlying storage ({:?})", v);
-            }
+        if self.has_ownership.load(Ordering::Relaxed)
+            && let Err(v) = unsafe { Self::remove_cfg(&self.name, &self.config) }
+        {
+            fatal_panic!(from self, "This should never happen! Failed to remove underlying storage ({:?})", v);
         }
     }
 }
@@ -255,6 +290,20 @@ impl NamedConceptMgmt for Storage {
     }
 }
 
+impl StaticStorageView for Storage {
+    fn is_empty(&self) -> bool {
+        self.view.is_empty()
+    }
+
+    fn len(&self) -> u64 {
+        self.view.len()
+    }
+
+    fn read(&self, content: &mut [u8]) -> Result<(), StaticStorageReadError> {
+        self.view.read(content)
+    }
+}
+
 impl NamedConcept for Storage {
     fn name(&self) -> &FileName {
         &self.name
@@ -264,27 +313,10 @@ impl NamedConcept for Storage {
 impl StaticStorage for Storage {
     type Builder = Builder;
     type Locked = Locked;
+    type View = StorageView;
 
-    fn len(&self) -> u64 {
-        self.content.value.blocking_lock().len() as u64
-    }
-
-    fn is_empty(&self) -> bool {
-        self.content.value.blocking_lock().is_empty()
-    }
-
-    fn read(&self, content: &mut [u8]) -> Result<(), StaticStorageReadError> {
-        let msg = "Failed to read from storage";
-        let value = self.content.value.blocking_lock();
-        if value.len() > content.len() {
-            fail!(from self, with StaticStorageReadError::BufferTooSmall,
-                    "{} since the provided buffer with a size of {} bytes is too small. Require at least a size of {} bytes.",
-                    msg, content.len(), value.len() );
-        }
-
-        content.clone_from_slice(value.as_slice());
-
-        Ok(())
+    fn view(&self) -> &Self::View {
+        &self.view
     }
 
     fn release_ownership(&self) {
@@ -360,7 +392,9 @@ impl StaticStorageBuilder<Storage> for Builder {
                     name: self.name,
                     has_ownership: AtomicBool::new(self.has_ownership),
                     config: self.config,
-                    content: entry.content.clone(),
+                    view: StorageView {
+                        content: entry.content.clone(),
+                    },
                 });
             }
         }
@@ -397,7 +431,7 @@ impl StaticStorageBuilder<Storage> for Builder {
                 name: self.name,
                 has_ownership: AtomicBool::new(self.has_ownership),
                 config: self.config,
-                content,
+                view: StorageView { content },
             },
         })
     }

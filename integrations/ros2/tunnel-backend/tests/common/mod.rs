@@ -1,4 +1,4 @@
-// Copyright (c) 2024 Contributors to the Eclipse Foundation
+// Copyright (c) 2026 Contributors to the Eclipse Foundation
 //
 // See the NOTICE file(s) distributed with this work for additional
 // information regarding copyright ownership.
@@ -10,12 +10,18 @@
 //
 // SPDX-License-Identifier: Apache-2.0 OR MIT
 
-use core::fmt::Debug;
+use core::time::Duration;
 
-use crate::pointer_trait::PointerTrait;
+use iceoryx2::prelude::*;
 
-/// Trait that allows to use typed pointers as generic arguments for structs.
-pub trait GenericPointer {
-    /// The underlying pointer type.
-    type Type<T: Debug>: PointerTrait<T> + Debug;
+pub const DISCOVERY_RETRY_PERIOD: Duration = Duration::from_millis(50);
+pub const DISCOVERY_RETRY_ATTEMPTS: usize = 200;
+
+#[derive(Debug, ZeroCopySend)]
+#[type_name("std_msgs/msg/String")]
+#[repr(C)]
+pub struct RosString(u8);
+
+pub fn service_name(name: &str) -> ServiceName {
+    name.try_into().expect("valid service name")
 }

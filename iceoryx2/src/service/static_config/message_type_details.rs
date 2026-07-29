@@ -68,13 +68,15 @@ pub struct TypeDetail {
 impl TypeDetail {
     /// Creates a new [`TypeDetail`] from the provided `T`. The [`TypeVariant`] defines if
     /// the type is part of a slice or directly contained.
-    pub fn new<T: ZeroCopySend>(variant: TypeVariant) -> Self {
+    pub fn new<T: iceoryx2_bb_elementary_traits::type_name::TypeName>(
+        variant: TypeVariant,
+    ) -> Self {
         Self {
             variant,
             type_name: unsafe {
                 fatal_panic!(
                     from "TypeDetail::__internal_new::<T>()",
-                    when TypeName::try_from(T::type_name()),
+                    when TypeName::try_from(<T as iceoryx2_bb_elementary_traits::type_name::TypeName>::type_name()),
                     "Name of type T does not fit into fixed-size TypeNameString"
                 )
             },
@@ -143,7 +145,11 @@ pub struct MessageTypeDetails {
 }
 
 impl MessageTypeDetails {
-    pub(crate) fn from<Header: ZeroCopySend, UserHeader: ZeroCopySend, Payload: ZeroCopySend>(
+    pub(crate) fn from<
+        Header: iceoryx2_bb_elementary_traits::type_name::TypeName,
+        UserHeader: iceoryx2_bb_elementary_traits::type_name::TypeName,
+        Payload: iceoryx2_bb_elementary_traits::type_name::TypeName,
+    >(
         payload_variant: TypeVariant,
     ) -> Self {
         Self {
@@ -151,6 +157,10 @@ impl MessageTypeDetails {
             user_header: TypeDetail::new::<UserHeader>(TypeVariant::FixedSize),
             payload: TypeDetail::new::<Payload>(payload_variant),
         }
+    }
+
+    pub(crate) fn all_headers_len(&self) -> usize {
+        align(self.header.size, self.user_header.alignment) + self.user_header.size
     }
 
     pub(crate) fn payload_ptr_from_header(&self, header: *const u8) -> *const u8 {

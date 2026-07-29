@@ -18,7 +18,6 @@ use crate::api::{
 };
 
 use iceoryx2::port::notifier::{Notifier, NotifierNotifyError};
-use iceoryx2_bb_elementary::static_assert::*;
 use iceoryx2_bb_elementary_traits::AsCStr;
 use iceoryx2_ffi_macros::CStrRepr;
 use iceoryx2_ffi_macros::iceoryx2_ffi;
@@ -34,6 +33,7 @@ pub enum iox2_notifier_notify_error_e {
     EVENT_ID_OUT_OF_BOUNDS = IOX2_OK as isize + 1,
     MISSED_DEADLINE,
     UNABLE_TO_ACQUIRE_ELAPSED_TIME,
+    INVALID_LISTENER_KEY,
 }
 
 impl IntoCInt for NotifierNotifyError {
@@ -45,6 +45,9 @@ impl IntoCInt for NotifierNotifyError {
             NotifierNotifyError::MissedDeadline => iox2_notifier_notify_error_e::MISSED_DEADLINE,
             NotifierNotifyError::UnableToAcquireElapsedTime => {
                 iox2_notifier_notify_error_e::UNABLE_TO_ACQUIRE_ELAPSED_TIME
+            }
+            NotifierNotifyError::InvalidListenerKey => {
+                iox2_notifier_notify_error_e::INVALID_LISTENER_KEY
             }
         }) as c_int
     }

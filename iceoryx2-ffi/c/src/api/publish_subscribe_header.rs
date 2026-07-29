@@ -13,7 +13,6 @@
 #![allow(non_camel_case_types)]
 
 use iceoryx2::service::header::publish_subscribe::Header;
-use iceoryx2_bb_elementary::static_assert::static_assert_ge;
 use iceoryx2_ffi_macros::iceoryx2_ffi;
 
 use crate::{
@@ -27,7 +26,7 @@ use crate::{
 #[repr(C)]
 #[repr(align(8))] // core::mem::align_of::<Option<Header>>()
 pub struct iox2_publish_subscribe_header_storage_t {
-    internal: [u8; 48], // core::mem::size_of::<Option<Header>>()
+    internal: [u8; 56], // core::mem::size_of::<Option<Header>>()
 }
 
 #[repr(C)]

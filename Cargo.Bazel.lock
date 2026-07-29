@@ -1,5 +1,5 @@
 {
-  "checksum": "3c20ded4aafe9898600a7b76682cc4bad1e18a21432fc9a047da033599ede4e1",
+  "checksum": "35af8ea09eacb8c1245cb31aa2a233be32e608e884060d42bcbbdd8fb342803a",
   "crates": {
     "addr2line 0.25.1": {
       "name": "addr2line",
@@ -4488,6 +4488,15 @@
           ],
           "selects": {}
         },
+        "deps": {
+          "common": [
+            {
+              "id": "flatbuffers 25.12.19",
+              "target": "flatbuffers"
+            }
+          ],
+          "selects": {}
+        },
         "edition": "2024",
         "version": "0.9.999"
       },
@@ -5977,6 +5986,15 @@
           ],
           "selects": {}
         },
+        "deps": {
+          "common": [
+            {
+              "id": "flatbuffers 25.12.19",
+              "target": "flatbuffers"
+            }
+          ],
+          "selects": {}
+        },
         "edition": "2024",
         "version": "0.9.999"
       },
@@ -6856,6 +6874,15 @@
           "common": [
             "default",
             "std"
+          ],
+          "selects": {}
+        },
+        "deps": {
+          "common": [
+            {
+              "id": "serde 1.0.228",
+              "target": "serde"
+            }
           ],
           "selects": {}
         },

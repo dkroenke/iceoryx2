@@ -24,6 +24,7 @@
 * [#1722](https://github.com/eclipse-iceoryx/iceoryx2/issues/1722) Remove allocations in tunnel hot path
 * [#1773](https://github.com/eclipse-iceoryx/iceoryx2/issues/1773) Make ports identifiable by name
 * [#1798](https://github.com/eclipse-iceoryx/iceoryx2/issues/1798) Add musl support
+* [#1813](https://github.com/eclipse-iceoryx/iceoryx2/issues/1813) Add API to deliver events to specific listener only
 
 ### Bugfixes
 
@@ -43,8 +44,13 @@
 * [#1746](https://github.com/eclipse-iceoryx/iceoryx2/issues/1746) Disable `POSIX_SUPPORT_FILE_LOCK_FOR_SHARED_MEMORY` on FreeBSD and move CI job for FreeBSD to main pipeline
 * [#1777](https://github.com/eclipse-iceoryx/iceoryx2/issues/1777) Fix service root folder creation named concept of iceoryx2-cal fixing execution on Windows platform.
 * [#1786](https://github.com/eclipse-iceoryx/iceoryx2/issues/1786) Disable transport_compression feature in Zenoh.
+* [#1788](https://github.com/eclipse-iceoryx/iceoryx2/issues/1788) Skip non-UTF-8 entries in `Node::list()` instead of panicking.
 * [#1792](https://github.com/eclipse-iceoryx/iceoryx2/issues/1792) Set key eq comparison function in language bindings for blackboard opener.
+* [#1797](https://github.com/eclipse-iceoryx/iceoryx2/issues/1797) Reclaim disconnected request-response client connections when fire-and-forget requests are disabled.
 * [#1800](https://github.com/eclipse-iceoryx/iceoryx2/issues/1800) iceoryx2-cxx: CleanupState is defined in global namespace
+* [#1807](https://github.com/eclipse-iceoryx/iceoryx2/issues/1807) Fix generated C FFI strings for `UPPER_SNAKE_CASE` enum variants.
+* [#1810](https://github.com/eclipse-iceoryx/iceoryx2/issues/1810) Make mgmt segment globally accessible
+* [#1844](https://github.com/eclipse-iceoryx/iceoryx2/issues/1844) Fix `semantic_string` macro for `rust-analyzer` auto-completion
 
 ### Refactoring
 
@@ -54,7 +60,10 @@
 -->
 
 * [#996](https://github.com/eclipse-iceoryx/iceoryx2/issues/996) Move BumpAllocator from iceoryx2-bb-memory into iceoryx2-bb-elementary
+* [#1613](https://github.com/eclipse-iceoryx/iceoryx2/issues/1613) Remove `NonNullCompat` after moving to Rust 1.89
 * [#1776](https://github.com/eclipse-iceoryx/iceoryx2/issues/1776) Rename AtomicCopy::__for_each_field() to for_each_field()
+* [#1845](https://github.com/eclipse-iceoryx/iceoryx2/issues/1845) Reduce imports for usage of the `semantic_string` macro
+* [#1853](https://github.com/eclipse-iceoryx/iceoryx2/issues/1853) Improve error message in static asserts
 
 ### Workflow
 
@@ -63,9 +72,11 @@
     conflicts when merging.
 -->
 
+* [#3](https://github.com/eclipse-iceoryx/iceoryx2/issues/3) Use clang 21 in the CI
 * [#1610](https://github.com/eclipse-iceoryx/iceoryx2/issues/1610) Add `no_std` tests for tunnel
 * [#1712](https://github.com/eclipse-iceoryx/iceoryx2/issues/1712) Add iceoryx2 version to static service config
 * [#1714](https://github.com/eclipse-iceoryx/iceoryx2/issues/1714) Add locking for all file descriptor based constructs
+* [#1815](https://github.com/eclipse-iceoryx/iceoryx2/issues/1815) Set Rust minimum required version (MSRV) to version 1.89.0
 
 ### New API features
 
@@ -97,11 +108,10 @@
     use core::ptr::NonNull;
 
     use iceoryx2_bb_elementary::bump_allocator::BumpAllocator;
-    use iceoryx2_bb_elementary_traits::non_null::NonNullCompat;
 
     let memory = [0u8; 8192];
     let sut = BumpAllocator::new(
-        NonNull::<u8>::iox2_from_ref(&memory[0]),
+        NonNull::<u8>::from_ref(&memory[0]),
         memory.len(),
     );
     ```
